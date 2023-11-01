@@ -632,6 +632,7 @@ pub enum CopyModeAssignment {
     MoveBackwardWord,
     MoveForwardWord,
     MoveBackwardWordStart,
+    MoveBackwardBlockStart,
     MoveForwardWordEnd,
     MoveRight,
     MoveLeft,

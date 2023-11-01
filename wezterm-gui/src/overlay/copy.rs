@@ -914,6 +914,7 @@ impl CopyRenderable {
                 let mut word_start = self.cursor.x - unicode_column_width(word, None);
                 if !is_whitespace_word(word) {
                     if self.cursor.x == word_start + 1 {
+                        // current position is start of a word
                         while let Some(next_word) = words.next() {
                             word_start -= unicode_column_width(next_word, None);
                             if !is_whitespace_word(next_word) {
@@ -941,6 +942,61 @@ impl CopyRenderable {
                         self.cursor.y -= 1;
                         self.cursor.x = usize::max_value();
                         return self.move_to_start_of_word();
+                    }
+                }
+            }
+        }
+        self.select_to_cursor_pos();
+    }
+
+    fn move_to_start_of_block(&mut self) {
+        let y = self.cursor.y;
+        let (top, lines) = self.delegate.get_lines(y..y + 1);
+        if let Some(line) = lines.get(0) {
+            self.cursor.y = top;
+            let width = line.len();
+            let s = line.columns_as_str(0..self.cursor.x + 1);
+            let mut words = s.split_word_bounds().rev();
+
+            if self.cursor.x == 0 || width == 0 {
+                if self.cursor.y > 0 {
+                    self.cursor.y -= 1;
+                    self.cursor.x = usize::max_value();
+                    return self.move_to_start_of_block();
+                }
+            }
+
+            if self.cursor.x > width - 1 {
+                self.cursor.x = width - 1;
+                return self.move_to_start_of_block();
+            }
+
+            if let Some(word) = words.next() {
+                let mut last_was_whitespace = false;
+                let mut word_start = self.cursor.x - unicode_column_width(word, None);
+                if !is_whitespace_word(word) {
+                    if self.cursor.x == word_start + 1 {
+                        // current position is start of a word
+                        // No reason to look for previous word. Just return.
+                        return;
+                    }
+                }
+                while let Some(next_word) = words.next() {
+                    if !is_whitespace_word(next_word) {
+                        word_start -= unicode_column_width(next_word, None);
+                        last_was_whitespace = false;
+                    } else {
+                        last_was_whitespace = true;
+                        break;
+                    }
+                }
+
+                self.cursor.x = word_start + 1;
+                if word_start + 1 == 0 && last_was_whitespace {
+                    if self.cursor.y > 0 {
+                        self.cursor.y -= 1;
+                        self.cursor.x = usize::max_value();
+                        return self.move_to_start_of_block();
                     }
                 }
             }
@@ -1242,6 +1298,7 @@ impl Pane for CopyOverlay {
                     MoveBackwardWord => render.move_backward_one_word(),
                     MoveForwardWord => render.move_forward_one_word(),
                     MoveBackwardWordStart => render.move_to_start_of_word(),
+                    MoveBackwardBlockStart => render.move_to_start_of_block(),
                     MoveForwardWordEnd => render.move_to_end_of_word(),
                     MoveRight => render.move_right_single_cell(),
                     MoveLeft => render.move_left_single_cell(),
