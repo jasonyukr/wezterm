@@ -1046,7 +1046,7 @@ impl CopyRenderable {
                         // mark the end of this block
                         self.cursor.x += index;
                     } else {
-                        if self.cursor.x + s.len() + 1 <= dims.cols {
+                        if self.cursor.x + s.len() + 1 < dims.cols {
                             // This block is last block of this line. mark the end of this block
                             self.cursor.x += s.len();
                         } else {
