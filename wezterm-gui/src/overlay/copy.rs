@@ -106,6 +106,19 @@ pub struct CopyModeParams {
     pub editing_search: bool,
 }
 
+struct WordToken {
+    isWhiteSpace: bool,
+    position: usize,
+    length: usize,
+}
+
+enum NextLineInfo {
+    NoLine,
+    EmptyLine,
+    StartsWithOther,
+    StartsWithChar,
+}
+
 impl CopyOverlay {
     pub fn with_pane(
         term_window: &TermWindow,
@@ -949,127 +962,6 @@ impl CopyRenderable {
         self.select_to_cursor_pos();
     }
 
-    fn find_first_whitespace(s: &str) -> Option<usize> {
-        s.chars().position(|c| c.is_whitespace())
-    }
-
-    fn rfind_first_whitespace(string: &str) -> Option<usize> {
-        for i in (0..string.len()).rev() {
-            // If we find a whitespace character, return its index.
-            if string.chars().nth(i).unwrap().is_whitespace() {
-                return Some(i);
-            }
-        }
-        return None;
-    }
-
-    fn has_folded_block_head(&mut self) -> bool {
-        let y = self.cursor.y;
-        let dims = self.delegate.get_dimensions();
-        let (_, lines) = self.delegate.get_lines(y - 1..y);
-        if let Some(line) = lines.get(0) {
-            let s = line.columns_as_str(0..dims.cols);
-            if let Some(ch) = s.chars().nth(dims.cols - 1) {
-                if !ch.is_whitespace()  {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    fn has_folded_block_tail(&mut self) -> bool {
-        let y = self.cursor.y;
-        let dims = self.delegate.get_dimensions();
-        let (_, lines) = self.delegate.get_lines(y + 1..y + 2);
-        if let Some(line) = lines.get(0) {
-            let s = line.columns_as_str(0..dims.cols);
-            if let Some(ch) = s.chars().nth(0) {
-                if !ch.is_whitespace()  {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    fn move_to_start_of_block(&mut self) {
-        let y = self.cursor.y;
-        let (top, lines) = self.delegate.get_lines(y..y + 1);
-        if let Some(line) = lines.get(0) {
-            self.cursor.y = top;
-            let width = line.len();
-            if let Some (cursor_ch) = line.columns_as_str(self.cursor.x..self.cursor.x + 1).chars().nth(0) {
-                let s = line.columns_as_str(0..self.cursor.x);
-                let dims = self.delegate.get_dimensions();
-                if cursor_ch.is_whitespace() { // if the cursor position character is whitespace
-                    // don't move the cursor
-                    return;
-                } else { // if the cursor position character is non-whitespace
-                    if let Some(index) = Self::rfind_first_whitespace(&s) {
-                        // mark the start of this block
-                        self.cursor.x = index + 1;
-                    } else {
-                        if y > 0 && self.has_folded_block_head() {
-                            // continue to search for the folded line case
-                            self.cursor.y -= 1;
-                            self.cursor.x = dims.cols - 1;
-                            return self.move_to_start_of_block();
-                        } else {
-                            // mark the start of this block
-                            self.cursor.x = 0;
-                        }
-                    }
-                }
-            } else { // if the cursor position character is invalid (out-of-scope)
-                // don't move the cursor
-                return;
-            }
-        }
-        self.select_to_cursor_pos();
-    }
-
-    fn move_to_end_of_block(&mut self) {
-        let y = self.cursor.y;
-        let (top, lines) = self.delegate.get_lines(y..y + 1);
-        if let Some(line) = lines.get(0) {
-            self.cursor.y = top;
-            let width = line.len();
-            if let Some (cursor_ch) = line.columns_as_str(self.cursor.x..self.cursor.x + 1).chars().nth(0) {
-                let s = line.columns_as_str(self.cursor.x + 1..width + 1);
-                let dims = self.delegate.get_dimensions();
-                if cursor_ch.is_whitespace() { // if the cursor position character is whitespace
-                    // don't move the cursor
-                    return;
-                } else { // if the cursor position character is non-whitespace
-                    if let Some(index) = Self::find_first_whitespace(&s) {
-                        // mark the end of this block
-                        self.cursor.x += index;
-                    } else {
-                        if self.cursor.x + s.len() + 1 < dims.cols {
-                            // This block is last block of this line. mark the end of this block
-                            self.cursor.x += s.len();
-                        } else {
-                            if y > 0 && self.has_folded_block_tail() {
-                                // continue to search for the folded line case
-                                self.cursor.y += 1;
-                                self.cursor.x = 0;
-                                return self.move_to_end_of_block();
-                            } else {
-                                // mark the end of this block
-                                self.cursor.x = dims.cols - 1;
-                            }
-                        }
-                    }
-                }
-            } else { // if the cursor position character is invalid (out-of-scope)
-                // don't move the cursor
-                return;
-            }
-        }
-        self.select_to_cursor_pos();
-    }
-
     fn move_to_end_of_word(&mut self) {
         let y = self.cursor.y;
         let (top, lines) = self.delegate.get_lines(y..y + 1);
@@ -1109,6 +1001,665 @@ impl CopyRenderable {
                     }
                 }
                 self.cursor.x = word_end - 1;
+            }
+        }
+        self.select_to_cursor_pos();
+    }
+
+    fn find_first_whitespace(s: &str) -> Option<usize> {
+        s.chars().position(|c| c.is_whitespace())
+    }
+
+    fn find_first_non_whitespace(s: &str) -> Option<usize> {
+        s.chars().position(|c| !c.is_whitespace())
+    }
+
+    fn rfind_first_whitespace(string: &str) -> Option<usize> {
+        for i in (0..string.len()).rev() {
+            // If we find a whitespace character, return its index.
+            if string.chars().nth(i).unwrap().is_whitespace() {
+                return Some(i);
+            }
+        }
+        return None;
+    }
+
+    fn rfind_first_non_whitespace(string: &str) -> Option<usize> {
+        for i in (0..string.len()).rev() {
+            // If we find a whitespace character, return its index.
+            if !string.chars().nth(i).unwrap().is_whitespace() {
+                return Some(i);
+            }
+        }
+        return None;
+    }
+
+    fn rfind_first_non_whitespace_token(array: &Vec<WordToken>, idx: usize) -> Option<usize> {
+        if idx >= array.len() {
+            return None;
+        }
+        for i in (0..idx + 1).rev() {
+            if !array[i].isWhiteSpace {
+                return Some(i);
+            }
+        }
+        return None;
+    }
+
+    fn guarantee_line_length(s: &str, cols: usize) -> String {
+        let mut line = s.to_string();
+        if line.len() < cols {
+            for _ in 0..(cols - line.len()) {
+                line.push(' ');
+            }
+        }
+        return line;
+    }
+
+    fn collect_merged_tokens(s: &str) -> Vec<WordToken> {
+        let mut array = Vec::new();
+
+        let mut last = WordToken {
+            isWhiteSpace: true,
+            position: 0,
+            length: 0,
+        };
+
+        let mut pos = 0;
+        for (idx, word) in s.split_word_bounds().enumerate() {
+            let len = unicode_column_width(word, None);
+            let element = WordToken {
+                isWhiteSpace: is_whitespace_word(word),
+                position: pos,
+                length: len,
+            };
+            if last.length == 0 {
+                last = element;
+            } else {
+                if last.isWhiteSpace == element.isWhiteSpace {
+                    last.length += element.length;
+                } else {
+                    array.push(last);
+                    last = element;
+                }
+            }
+            pos += len;
+        }
+
+        if last.length != 0 {
+            array.push(last);
+        }
+        array
+    }
+
+    fn has_next_scrollback_row(&mut self) -> bool {
+        let dims = self.delegate.get_dimensions();
+        if self.cursor.y + 1 < dims.scrollback_rows as isize {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    fn has_previous_scrollback_row(&mut self) -> bool {
+        if self.cursor.y - 1 >= 0 {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    fn get_current_line(&mut self) -> (isize, String) {
+        let y = self.cursor.y;
+        if y < 0 {
+            return (-1, "".to_string());
+        }
+        let dims = self.delegate.get_dimensions();
+        let (top, lines) = self.delegate.get_lines(y..y + 1);
+        if let Some(ln) = lines.get(0) {
+            let line = Self::guarantee_line_length(&ln.columns_as_str(0..dims.cols), dims.cols);
+            return (top, line);
+        }
+        return (-1, "".to_string());
+    }
+
+    fn get_previous_line(&mut self) -> (isize, String) {
+        let y = self.cursor.y;
+        if y - 1 < 0 {
+            return (-1, "".to_string());
+        }
+        let dims = self.delegate.get_dimensions();
+        let (top, lines) = self.delegate.get_lines(y - 1..y);
+        if let Some(ln) = lines.get(0) {
+            let line = Self::guarantee_line_length(&ln.columns_as_str(0..dims.cols), dims.cols);
+            return (top, line);
+        }
+        return (-1, "".to_string());
+    }
+
+    fn has_folded_block_head(&mut self) -> bool {
+        if !self.has_previous_scrollback_row() {
+            return false;
+        }
+        let y = self.cursor.y;
+        let dims = self.delegate.get_dimensions();
+        let (top, lines) = self.delegate.get_lines(y - 1..y);
+        if let Some(line) = lines.get(0) {
+            let s = line.columns_as_str(0..dims.cols);
+            if let Some(ch) = s.chars().nth(dims.cols - 1) {
+                if !ch.is_whitespace()  {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    fn has_folded_block_tail(&mut self) -> bool {
+        if !self.has_next_scrollback_row() {
+            return false;
+        }
+        let y = self.cursor.y;
+        let dims = self.delegate.get_dimensions();
+        let (_, lines) = self.delegate.get_lines(y + 1..y + 2);
+        if let Some(line) = lines.get(0) {
+            let s = line.columns_as_str(0..dims.cols);
+            if let Some(ch) = s.chars().nth(0) {
+                if !ch.is_whitespace()  {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    fn peek_next_line_info(&mut self) -> NextLineInfo {
+        let y = self.cursor.y;
+        let dims = self.delegate.get_dimensions();
+        if !self.has_next_scrollback_row() {
+            return NextLineInfo::NoLine;
+        }
+        let (_, lines) = self.delegate.get_lines(y + 1..y + 2);
+        if let Some(line) = lines.get(0) {
+            let s = line.columns_as_str(0..dims.cols);
+            if let Some(ch) = s.chars().nth(0) {
+                if ch.is_whitespace() {
+                    return NextLineInfo::StartsWithOther;
+                } else {
+                    return NextLineInfo::StartsWithChar;
+                }
+            } else {
+                return NextLineInfo::EmptyLine;
+            }
+        } else {
+            return NextLineInfo::NoLine;
+        }
+    }
+    fn move_to_start_of_block(&mut self) {
+        let y = self.cursor.y;
+        let (top, lines) = self.delegate.get_lines(y..y + 1);
+        if let Some(line) = lines.get(0) {
+            self.cursor.y = top;
+            let width = line.len();
+            if let Some (cursor_ch) = line.columns_as_str(self.cursor.x..self.cursor.x + 1).chars().nth(0) {
+                let s = line.columns_as_str(0..self.cursor.x);
+                let dims = self.delegate.get_dimensions();
+                if cursor_ch.is_whitespace() { // if the cursor position character is whitespace
+                    // don't move the cursor
+                    return;
+                } else { // if the cursor position character is non-whitespace
+                    if let Some(index) = Self::rfind_first_whitespace(&s) {
+                        // mark the start of this block
+                        self.cursor.x = index + 1;
+                    } else {
+                        if self.has_folded_block_head() {
+                            // continue to search for the folded line case
+                            self.cursor.y -= 1;
+                            self.cursor.x = dims.cols - 1;
+                            return self.move_to_start_of_block();
+                        } else {
+                            // mark the start of this block
+                            self.cursor.x = 0;
+                        }
+                    }
+                }
+            } else { // if the cursor position character is invalid (out-of-scope)
+                // don't move the cursor
+                return;
+            }
+        }
+        self.select_to_cursor_pos();
+    }
+
+    fn move_to_end_of_block(&mut self) {
+        let y = self.cursor.y;
+        let (top, lines) = self.delegate.get_lines(y..y + 1);
+        if let Some(line) = lines.get(0) {
+            self.cursor.y = top;
+            let width = line.len();
+            if let Some (cursor_ch) = line.columns_as_str(self.cursor.x..self.cursor.x + 1).chars().nth(0) {
+                let s = line.columns_as_str(self.cursor.x + 1..width + 1);
+                let dims = self.delegate.get_dimensions();
+                if cursor_ch.is_whitespace() { // if the cursor position character is whitespace
+                    // don't move the cursor
+                    return;
+                } else { // if the cursor position character is non-whitespace
+                    if let Some(index) = Self::find_first_whitespace(&s) {
+                        // mark the end of this block
+                        self.cursor.x += index;
+                    } else {
+                        if self.cursor.x + s.len() + 1 < dims.cols {
+                            // This block is last block of this line. mark the end of this block
+                            self.cursor.x += s.len();
+                        } else {
+                            if self.has_folded_block_tail() {
+                                // continue to search for the folded line case
+                                self.cursor.y += 1;
+                                self.cursor.x = 0;
+                                return self.move_to_end_of_block();
+                            } else {
+                                // mark the end of this block
+                                self.cursor.x = dims.cols - 1;
+                            }
+                        }
+                    }
+                }
+            } else { // if the cursor position character is invalid (out-of-scope)
+                // don't move the cursor
+                return;
+            }
+        }
+        self.select_to_cursor_pos();
+    }
+
+    // mimic the behavior of vi "W" key
+    fn forward_non_whitespace_words(&mut self) {
+        let y = self.cursor.y;
+        let (top, lines) = self.delegate.get_lines(y..y + 1);
+        if let Some(line) = lines.get(0) {
+            self.cursor.y = top;
+            let dims = self.delegate.get_dimensions();
+            let info = self.peek_next_line_info();
+            let width = line.len();
+            if width == 0 {
+                match info {
+                    NextLineInfo::NoLine => {
+                    },
+                    NextLineInfo::EmptyLine => {
+                        self.cursor.y += 1;
+                        self.cursor.x = 0;
+                    },
+                    NextLineInfo::StartsWithChar => {
+                        self.cursor.y += 1;
+                        self.cursor.x = 0;
+                    },
+                    NextLineInfo::StartsWithOther => {
+                        self.cursor.y += 1;
+                        self.cursor.x = 0;
+                        return self.forward_non_whitespace_words();
+                    },
+                }
+            } else if let Some (cursor_ch) = line.columns_as_str(self.cursor.x..self.cursor.x + 1).chars().nth(0) {
+                let s = line.columns_as_str(self.cursor.x + 1..width + 1);
+                if cursor_ch.is_whitespace() { // if the cursor position character is whitespace
+                    if let Some(index) = Self::find_first_non_whitespace(&s) {
+                        self.cursor.x += index + 1;
+                    } else {
+                        match info {
+                            NextLineInfo::NoLine => {
+                            },
+                            NextLineInfo::EmptyLine => {
+                                self.cursor.y += 1;
+                                self.cursor.x = 0;
+                            },
+                            NextLineInfo::StartsWithChar => {
+                                self.cursor.y += 1;
+                                self.cursor.x = 0;
+                            },
+                            NextLineInfo::StartsWithOther => {
+                                self.cursor.y += 1;
+                                self.cursor.x = 0;
+                                return self.forward_non_whitespace_words();
+                            },
+                        }
+                    }
+                } else { // if the cursor position character is non-whitespace
+                    if let Some(index) = Self::find_first_whitespace(&s) {
+                        self.cursor.x += index + 1;
+                        return self.forward_non_whitespace_words();
+                    } else {
+                        match info {
+                            NextLineInfo::NoLine => {
+                            },
+                            NextLineInfo::EmptyLine => {
+                                self.cursor.y += 1;
+                                self.cursor.x = 0;
+                            },
+                            NextLineInfo::StartsWithChar => {
+                                if self.cursor.x + s.len() + 1 < dims.cols {
+                                    self.cursor.y += 1;
+                                    self.cursor.x = 0;
+                                } else {
+                                    self.cursor.y += 1;
+                                    self.cursor.x = 0;
+                                    return self.forward_non_whitespace_words();
+                                }
+                            },
+                            NextLineInfo::StartsWithOther => {
+                                self.cursor.y += 1;
+                                self.cursor.x = 0;
+                                return self.forward_non_whitespace_words();
+                            },
+                        }
+                    }
+                }
+            } else {
+                match info {
+                    NextLineInfo::NoLine => {
+                    },
+                    NextLineInfo::EmptyLine => {
+                        self.cursor.y += 1;
+                        self.cursor.x = 0;
+                    },
+                    NextLineInfo::StartsWithChar => {
+                        self.cursor.y += 1;
+                        self.cursor.x = 0;
+                    },
+                    NextLineInfo::StartsWithOther => {
+                        self.cursor.y += 1;
+                        self.cursor.x = 0;
+                        return self.forward_non_whitespace_words();
+                    },
+                }
+            }
+        }
+        self.select_to_cursor_pos();
+    }
+
+    fn backward_to_possible_previous_line(&mut self) {
+        while self.cursor.x == 0 {
+            let (prev_top, mut prev_line) = self.get_previous_line();
+            if prev_top == -1 {
+                break;
+            }
+            let prev_tokens = Self::collect_merged_tokens(&prev_line);
+            let token_len = prev_tokens.len();
+            if token_len == 0 {
+                // NOT possible
+            } else if token_len == 1 {
+                if !prev_tokens[0].isWhiteSpace {
+                    self.cursor.y -= 1;
+                    self.cursor.x = 0;
+                    continue;
+                } else {
+                    break;
+                }
+            } else {
+                if !prev_tokens[token_len - 1].isWhiteSpace {
+                    self.cursor.y -= 1;
+                    self.cursor.x = prev_tokens[token_len - 1].position;
+                }
+                break;
+            }
+        }
+        self.select_to_cursor_pos();
+    }
+
+    // mimic the behavior of vi "B" key
+    fn backward_non_whitespace_words(&mut self) {
+        let y = self.cursor.y;
+        let dims = self.delegate.get_dimensions();
+
+        let (curr_top, mut curr_line) = self.get_current_line();
+        let (prev_top, mut prev_line) = self.get_previous_line();
+
+        if curr_top == -1 {
+            // logically not possible case
+        } else {
+            self.cursor.y = curr_top;
+        }
+
+        // extract current cursor character and then truncate that
+        let cursor_char = curr_line.chars().nth(self.cursor.x).unwrap();
+        curr_line.truncate(self.cursor.x);
+
+        let curr_tokens = Self::collect_merged_tokens(&curr_line);
+        let prev_tokens = Self::collect_merged_tokens(&prev_line);
+
+        /*
+           Word tokens
+           ==============================
+           '|'   : start/end of the line
+           'W'   : non-whitespace word
+           's'   : whitespace
+           'C'   : non-whitespace cursor
+           'c'   : whitespace cursor
+           '...' : any possible tokens
+         */
+        if !cursor_char.is_ascii_whitespace() { // if the cursor position character is non-whitespace
+            let token_len = curr_tokens.len();
+            if token_len == 0 { // "|C" case
+                if prev_top != -1 {
+                    if !prev_tokens[prev_tokens.len() - 1].isWhiteSpace {
+                        // Folded word case
+                        // "|...W|"
+                        // "|C"
+                        self.cursor.x = 0; // actually redundant
+                        return self.backward_to_possible_previous_line();
+                    } else {
+                        if prev_tokens.len() == 1 {
+                            // Special case: move to the start of the previous empty line
+                            // "|s|"
+                            // "|C"
+                            self.cursor.y -= 1;
+                            self.cursor.x = 0;
+                        } else {
+                            // Continue to search the last word in the previous line
+                            // "|...Ws|"
+                            // "|C"
+                            self.cursor.y -= 1;
+                            self.cursor.x = dims.cols - 1;
+                            return self.backward_non_whitespace_words();
+                        }
+                    }
+                } else {
+                    // Previous line doesn't exist: Just stay
+                    // "____"
+                    // "|C"
+                }
+            } else {
+                if !curr_tokens[token_len - 1].isWhiteSpace { // "|WC", "|sWC", "|...sWC" case
+                    if token_len - 1 == 0 { // "|WC" case
+                        if prev_top != -1 {
+                            if !prev_tokens[prev_tokens.len() - 1].isWhiteSpace {
+                                // Folded word case
+                                // "|...W|"
+                                // "|WC"
+                                self.cursor.x = 0;
+                                return self.backward_to_possible_previous_line();
+                            } else {
+                                // Fall through: update self.cursor.x
+                                // "|...s|"
+                                // "|WC"
+                            }
+                        } else {
+                            // Fall through: update self.cursor.x
+                            // "____"
+                            // "|WC"
+                        }
+                    } else {
+                        // Fall through: update self.cursor.x
+                        // "|sWC", "|...sWC" case
+                    }
+                    // Move to the start of the current word
+                    self.cursor.x = curr_tokens[token_len - 1].position;
+                } else { // "|sC", "|WsC", "|...sWsC" case
+                    if let Some(idx) = Self::rfind_first_non_whitespace_token(&curr_tokens, token_len - 2) {
+                        // Move to the start of the last word
+                        self.cursor.x = curr_tokens[idx].position;
+                        if self.cursor.x == 0 {
+                            // "|WsC" case
+                            if prev_top != -1 {
+                                if !prev_tokens[prev_tokens.len() - 1].isWhiteSpace {
+                                    // "|...W|"
+                                    // "|WsC"
+                                    return self.backward_to_possible_previous_line();
+                                } else {
+                                    // Do nothing: self.cursor.x already updated
+                                    // "|...s|"
+                                    // "|WsC"
+                                }
+                            } else {
+                                // Do nothing: self.cursor.x already updated
+                                // "____"
+                                // "|WsC"
+                            }
+                        } else {
+                            // Do nothing: self.cursor.x already updated
+                            // "|...sWsC" case
+                        }
+                    } else {
+                        // "|sC" case
+                        if prev_top != -1 {
+                            if prev_tokens.len() == 1 && prev_tokens[0].isWhiteSpace {
+                                // Special case: move to the start of the previous empty line
+                                // "|s|"
+                                // "|sC"
+                                self.cursor.y -= 1;
+                                self.cursor.x = 0;
+                            } else {
+                                // "|...W|"
+                                // "|sC"
+                                //
+                                // "|...Ws|"
+                                // "|sC"
+                                //
+                                // "|W|"
+                                // "|sC"
+                                self.cursor.y -= 1;
+                                self.cursor.x = dims.cols - 1;
+                                return self.backward_non_whitespace_words();
+                            }
+                        } else {
+                            // Previous line doesn't exist: Just stay
+                            // "____"
+                            // "|sC"
+                        }
+                    }
+                }
+            }
+        } else { // if the cursor position character is whitespace
+            let token_len = curr_tokens.len();
+            if token_len == 0 { // "|c" case
+                if prev_top != -1 {
+                    if !prev_tokens[prev_tokens.len() - 1].isWhiteSpace {
+                        // Continue to search the last word in the previous line
+                        // "|...W|"
+                        // "|c"
+                        self.cursor.y -= 1;
+                        self.cursor.x = dims.cols - 1;
+                        return self.backward_non_whitespace_words();
+                    } else {
+                        if prev_tokens.len() == 1 {
+                            // Special case: move to the start of the previous empty line
+                            // "|s|"
+                            // "|c"
+                            self.cursor.y -= 1;
+                            self.cursor.x = 0;
+                        } else {
+                            // Continue to search the last word in the previous line
+                            // "|..Ws|"
+                            // "|c"
+                            self.cursor.y -= 1;
+                            self.cursor.x = dims.cols - 1;
+                            return self.backward_non_whitespace_words();
+                        }
+                    }
+                } else {
+                    // Previous line doesn't exist: Just stay
+                    // "____"
+                    // "|c"
+                }
+            } else {
+                if !curr_tokens[token_len - 1].isWhiteSpace { // "|Wc", "|sWc", "|...sWc" case
+                    if token_len - 1 == 0 { // "|Wc" case
+                        if prev_top != -1 {
+                            if !prev_tokens[prev_tokens.len() - 1].isWhiteSpace {
+                                // Folded word case
+                                // "|...W|"
+                                // "|Wc"
+                                self.cursor.x = 0;
+                                return self.backward_to_possible_previous_line();
+                            } else {
+                                // Fall through: update self.cursor.x
+                                // "|...s|"
+                                // "|Wc"
+                            }
+                        } else {
+                            // Fall through: update self.cursor.x
+                            // "____"
+                            // "|Wc"
+                        }
+                    } else {
+                        // Fall through: update self.cursor.x
+                        // "|sWc", "|...sWc" case
+                    }
+                    // Move to the start of the current word
+                    self.cursor.x = curr_tokens[token_len - 1].position;
+                } else { // "|sc", "|Wsc", "|...Wsc" case
+                    if let Some(idx) = Self::rfind_first_non_whitespace_token(&curr_tokens, token_len - 2) {
+                        // Move to the start of the last word
+                        self.cursor.x = curr_tokens[idx].position;
+                        if self.cursor.x == 0 {
+                            // "|Wsc" case
+                            if prev_top != -1 {
+                                if !prev_tokens[prev_tokens.len() - 1].isWhiteSpace {
+                                    // "|...W|"
+                                    // "|Wsc"
+                                    return self.backward_to_possible_previous_line();
+                                } else {
+                                    // Do nothing: self.cursor.x already updated
+                                    // "|...s|"
+                                    // "|Wsc"
+                                }
+                            } else {
+                                // Do nothing: self.cursor.x already updated
+                                // "____"
+                                // "|Wsc"
+                            }
+                        } else {
+                            // Do nothing: self.cursor.x already updated
+                            // "|...Wsc" case
+                        }
+                    } else {
+                        // "|sc" case
+                        if prev_top != -1 {
+                            if prev_tokens.len() == 1 && prev_tokens[0].isWhiteSpace {
+                                // Special case: move to the start of the previous empty line
+                                // "|s|"
+                                // "|sc"
+                                self.cursor.y -= 1;
+                                self.cursor.x = 0;
+                            } else {
+                                // "|...W|"
+                                // "|sc"
+                                //
+                                // "|...Ws|"
+                                // "|sc"
+                                //
+                                // "|W|"
+                                // "|sc"
+                                self.cursor.y -= 1;
+                                self.cursor.x = dims.cols - 1;
+                                return self.backward_non_whitespace_words();
+                            }
+                        } else {
+                            // Previous line doesn't exist: Just stay
+                            // "____"
+                            // "|sc"
+                        }
+                    }
+                }
             }
         }
         self.select_to_cursor_pos();
@@ -1367,6 +1918,8 @@ impl Pane for CopyOverlay {
                     MoveBlockStart => render.move_to_start_of_block(),
                     MoveBlockEnd => render.move_to_end_of_block(),
                     MoveForwardWordEnd => render.move_to_end_of_word(),
+                    ForwardNonWSWords => render.forward_non_whitespace_words(),
+                    BackwardNonWSWords => render.backward_non_whitespace_words(),
                     MoveRight => render.move_right_single_cell(),
                     MoveLeft => render.move_left_single_cell(),
                     MoveUp => render.move_up_single_row(),
