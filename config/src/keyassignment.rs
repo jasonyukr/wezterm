@@ -631,7 +631,6 @@ pub enum CopyModeAssignment {
     MoveToSelectionOtherEndHoriz,
     MoveBackwardWord,
     MoveForwardWord,
-    MoveBackwardWordStart,
     MoveBlockStart,
     MoveBlockEnd,
     MoveForwardWordEnd,
