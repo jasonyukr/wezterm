@@ -107,16 +107,9 @@ pub struct CopyModeParams {
 }
 
 struct WordToken {
-    isWhiteSpace: bool,
+    is_ws: bool,
     position: usize,
     length: usize,
-}
-
-enum NextLineInfo {
-    NoLine,
-    EmptyLine,
-    StartsWithOther,
-    StartsWithChar,
 }
 
 impl CopyOverlay {
@@ -1010,24 +1003,10 @@ impl CopyRenderable {
         s.chars().position(|c| c.is_whitespace())
     }
 
-    fn find_first_non_whitespace(s: &str) -> Option<usize> {
-        s.chars().position(|c| !c.is_whitespace())
-    }
-
     fn rfind_first_whitespace(string: &str) -> Option<usize> {
         for i in (0..string.len()).rev() {
             // If we find a whitespace character, return its index.
             if string.chars().nth(i).unwrap().is_whitespace() {
-                return Some(i);
-            }
-        }
-        return None;
-    }
-
-    fn rfind_first_non_whitespace(string: &str) -> Option<usize> {
-        for i in (0..string.len()).rev() {
-            // If we find a whitespace character, return its index.
-            if !string.chars().nth(i).unwrap().is_whitespace() {
                 return Some(i);
             }
         }
@@ -1039,16 +1018,7 @@ impl CopyRenderable {
             return None;
         }
         for i in (0..idx + 1).rev() {
-            if !array[i].isWhiteSpace {
-                return Some(i);
-            }
-        }
-        return None;
-    }
-
-    fn find_first_whitespace_token(array: &Vec<WordToken>) -> Option<usize> {
-        for i in (0..array.len()) {
-            if array[i].isWhiteSpace {
+            if !array[i].is_ws {
                 return Some(i);
             }
         }
@@ -1056,8 +1026,8 @@ impl CopyRenderable {
     }
 
     fn find_first_non_whitespace_token(array: &Vec<WordToken>) -> Option<usize> {
-        for i in (0..array.len()) {
-            if !array[i].isWhiteSpace {
+        for i in 0..array.len() {
+            if !array[i].is_ws {
                 return Some(i);
             }
         }
@@ -1078,23 +1048,23 @@ impl CopyRenderable {
         let mut array = Vec::new();
 
         let mut last = WordToken {
-            isWhiteSpace: true,
+            is_ws: true,
             position: 0,
             length: 0,
         };
 
         let mut pos = start_pos;
-        for (idx, word) in s.split_word_bounds().enumerate() {
+        for (_idx, word) in s.split_word_bounds().enumerate() {
             let len = unicode_column_width(word, None);
             let element = WordToken {
-                isWhiteSpace: is_whitespace_word(word),
+                is_ws: is_whitespace_word(word),
                 position: pos,
                 length: len,
             };
             if last.length == 0 {
                 last = element;
             } else {
-                if last.isWhiteSpace == element.isWhiteSpace {
+                if last.is_ws == element.is_ws {
                     last.length += element.length;
                 } else {
                     array.push(last);
@@ -1175,7 +1145,7 @@ impl CopyRenderable {
         }
         let y = self.cursor.y;
         let dims = self.delegate.get_dimensions();
-        let (top, lines) = self.delegate.get_lines(y - 1..y);
+        let (_top, lines) = self.delegate.get_lines(y - 1..y);
         if let Some(line) = lines.get(0) {
             let s = line.columns_as_str(0..dims.cols);
             if let Some(ch) = s.chars().nth(dims.cols - 1) {
@@ -1205,34 +1175,11 @@ impl CopyRenderable {
         return false;
     }
 
-    fn peek_next_line_info(&mut self) -> NextLineInfo {
-        let y = self.cursor.y;
-        let dims = self.delegate.get_dimensions();
-        if !self.has_next_scrollback_row() {
-            return NextLineInfo::NoLine;
-        }
-        let (_, lines) = self.delegate.get_lines(y + 1..y + 2);
-        if let Some(line) = lines.get(0) {
-            let s = line.columns_as_str(0..dims.cols);
-            if let Some(ch) = s.chars().nth(0) {
-                if ch.is_whitespace() {
-                    return NextLineInfo::StartsWithOther;
-                } else {
-                    return NextLineInfo::StartsWithChar;
-                }
-            } else {
-                return NextLineInfo::EmptyLine;
-            }
-        } else {
-            return NextLineInfo::NoLine;
-        }
-    }
     fn move_to_start_of_block(&mut self) {
         let y = self.cursor.y;
         let (top, lines) = self.delegate.get_lines(y..y + 1);
         if let Some(line) = lines.get(0) {
             self.cursor.y = top;
-            let width = line.len();
             if let Some (cursor_ch) = line.columns_as_str(self.cursor.x..self.cursor.x + 1).chars().nth(0) {
                 let s = line.columns_as_str(0..self.cursor.x);
                 let dims = self.delegate.get_dimensions();
@@ -1306,11 +1253,8 @@ impl CopyRenderable {
 
     // mimic the behavior of vi "W" key
     fn forward_non_whitespace_words(&mut self) {
-        let y = self.cursor.y;
-        let dims = self.delegate.get_dimensions();
-
-        let (curr_top, mut curr_line) = self.get_current_line();
-        let (next_top, mut next_line) = self.get_next_line();
+        let (curr_top, curr_line) = self.get_current_line();
+        let (next_top, next_line) = self.get_next_line();
 
         if curr_top == -1 {
             // logically not possible case
@@ -1325,8 +1269,8 @@ impl CopyRenderable {
 
         // log::info!("forward_non_whitespace_words: cursor_char=|{}| token-len={} curr_line=|{}|", cursor_char, curr_tokens.len(), curr_line);
         // for i in (0..curr_tokens.len()) {
-        //     log::info!(" token[{}]: isWhitespace={} position={} length={}", i,
-        //                curr_tokens[i].isWhiteSpace, 
+        //     log::info!(" token[{}]: is_ws={} position={} length={}", i,
+        //                curr_tokens[i].is_ws, 
         //                curr_tokens[i].position,
         //                curr_tokens[i].length);
         // }
@@ -1345,7 +1289,7 @@ impl CopyRenderable {
             let token_len = curr_tokens.len();
             if token_len == 0 { // "|...C|" case
                 if next_top != -1 {
-                    if !next_tokens[0].isWhiteSpace {
+                    if !next_tokens[0].is_ws {
                         // Folded word case
                         // "|...C|"
                         // "|W"
@@ -1372,10 +1316,10 @@ impl CopyRenderable {
                     // "----"
                 }
             } else {
-                if !curr_tokens[0].isWhiteSpace { // "|...CW|", "|...CWs|", "|...CWsW|", "|...CWsWs...|" case
+                if !curr_tokens[0].is_ws { // "|...CW|", "|...CWs|", "|...CWsW|", "|...CWsWs...|" case
                     if token_len == 1 { // "|...CW|" case
                         if next_top != -1 {
-                            if !next_tokens[0].isWhiteSpace {
+                            if !next_tokens[0].is_ws {
                                 // Folded word case
                                 // "|...CW|"
                                 // "|W" 
@@ -1401,7 +1345,7 @@ impl CopyRenderable {
                         }
                     } else if token_len == 2 { // "|...CWs|" case
                         if next_top != -1 {
-                            if !next_tokens[0].isWhiteSpace {
+                            if !next_tokens[0].is_ws {
                                 // "|...CWs|"
                                 // "|W"
                                 self.cursor.y += 1;
@@ -1433,7 +1377,7 @@ impl CopyRenderable {
                 } else { // "|...Cs|", "|...CsW|", "|...CsWs...|" case
                     if token_len == 1 { // "|...Cs|" case
                         if next_top != -1 {
-                            if !next_tokens[0].isWhiteSpace {
+                            if !next_tokens[0].is_ws {
                                 // "|...Cs|"
                                 // "|W"
                                 self.cursor.y += 1;
@@ -1466,7 +1410,7 @@ impl CopyRenderable {
             let token_len = curr_tokens.len();
             if token_len == 0 { // "|c|" case
                 if next_top != -1 {
-                    if !next_tokens[0].isWhiteSpace {
+                    if !next_tokens[0].is_ws {
                         // "|c|"
                         // "W"
                         self.cursor.y += 1;
@@ -1491,12 +1435,12 @@ impl CopyRenderable {
                     // "----"
                 }
             } else {
-                if !curr_tokens[0].isWhiteSpace { // "|...cW|", "|...cWs|", "|...cWsW|", "|...cWsWs...|" case
+                if !curr_tokens[0].is_ws { // "|...cW|", "|...cWs|", "|...cWsW|", "|...cWsWs...|" case
                     self.cursor.x = curr_tokens[0].position;
                 } else { // "|...cs|", "|...csW|", "|...csWs|", "|...csWs...|" case
                     if token_len == 1 { // "|...cs|" case
                         if next_top != -1 {
-                            if !next_tokens[0].isWhiteSpace {
+                            if !next_tokens[0].is_ws {
                                 // "|...cs|"
                                 // "|W"
                                 self.cursor.y += 1;
@@ -1541,10 +1485,12 @@ impl CopyRenderable {
         let mut next_tokens = Self::collect_merged_tokens(&next_line, 0);
         let mut token_len = next_tokens.len();
         while token_len == 1 {
-            if !next_tokens[0].isWhiteSpace {
+            if !next_tokens[0].is_ws {
                 self.cursor.y += 1;
                 self.cursor.x = 0;
                 (next_top, next_line) = self.get_next_line();
+                if next_top == -1 {
+                }
                 next_tokens = Self::collect_merged_tokens(&next_line, 0);
                 token_len = next_tokens.len();
                 continue;
@@ -1557,10 +1503,10 @@ impl CopyRenderable {
         }
 
         if token_len == 2 {
-            if !next_tokens[0].isWhiteSpace {
+            if !next_tokens[0].is_ws {
                 // "|Ws|"
                 self.cursor.y += 1;
-                let (next2_top, mut next2_line) = self.get_next_line();
+                let (next2_top, next2_line) = self.get_next_line();
                 if next2_top == -1 {
                     // "|Ws|"
                     // "----"
@@ -1585,7 +1531,7 @@ impl CopyRenderable {
                 self.cursor.x = next_tokens[1].position;
             }
         } else {
-            if !next_tokens[0].isWhiteSpace {
+            if !next_tokens[0].is_ws {
                 // "|WsW"
                 self.cursor.y += 1;
                 self.cursor.x = next_tokens[2].position;
@@ -1600,7 +1546,7 @@ impl CopyRenderable {
 
     fn backward_to_possible_previous_line(&mut self) {
         while self.cursor.x == 0 {
-            let (prev_top, mut prev_line) = self.get_previous_line();
+            let (prev_top, prev_line) = self.get_previous_line();
             if prev_top == -1 {
                 break;
             }
@@ -1609,7 +1555,7 @@ impl CopyRenderable {
             if token_len == 0 {
                 // NOT possible
             } else if token_len == 1 {
-                if !prev_tokens[0].isWhiteSpace {
+                if !prev_tokens[0].is_ws {
                     self.cursor.y -= 1;
                     self.cursor.x = 0;
                     continue;
@@ -1617,7 +1563,7 @@ impl CopyRenderable {
                     break;
                 }
             } else {
-                if !prev_tokens[token_len - 1].isWhiteSpace {
+                if !prev_tokens[token_len - 1].is_ws {
                     self.cursor.y -= 1;
                     self.cursor.x = prev_tokens[token_len - 1].position;
                 }
@@ -1629,11 +1575,10 @@ impl CopyRenderable {
 
     // mimic the behavior of vi "B" key
     fn backward_non_whitespace_words(&mut self) {
-        let y = self.cursor.y;
         let dims = self.delegate.get_dimensions();
 
-        let (curr_top, mut curr_line) = self.get_current_line();
-        let (prev_top, mut prev_line) = self.get_previous_line();
+        let (curr_top, curr_line) = self.get_current_line();
+        let (prev_top, prev_line) = self.get_previous_line();
 
         if curr_top == -1 {
             // logically not possible case
@@ -1648,8 +1593,8 @@ impl CopyRenderable {
 
         // log::info!("backward_non_whitespace_words: cursor_char=|{}| token-len={} curr_line=|{}|", cursor_char, curr_tokens.len(), curr_line);
         // for i in (0..curr_tokens.len()) {
-        //     log::info!(" token[{}]: isWhitespace={} position={} length={}", i,
-        //                curr_tokens[i].isWhiteSpace, 
+        //     log::info!(" token[{}]: is_ws={} position={} length={}", i,
+        //                curr_tokens[i].is_ws, 
         //                curr_tokens[i].position,
         //                curr_tokens[i].length);
         // }
@@ -1668,7 +1613,7 @@ impl CopyRenderable {
             let token_len = curr_tokens.len();
             if token_len == 0 { // "|C" case
                 if prev_top != -1 {
-                    if !prev_tokens[prev_tokens.len() - 1].isWhiteSpace {
+                    if !prev_tokens[prev_tokens.len() - 1].is_ws {
                         // Folded word case
                         // "|...W|"
                         // "|C"
@@ -1696,10 +1641,10 @@ impl CopyRenderable {
                     // "|C"
                 }
             } else {
-                if !curr_tokens[token_len - 1].isWhiteSpace { // "|WC", "|sWC", "|...sWC" case
+                if !curr_tokens[token_len - 1].is_ws { // "|WC", "|sWC", "|...sWC" case
                     if token_len == 1 { // "|WC" case
                         if prev_top != -1 {
-                            if !prev_tokens[prev_tokens.len() - 1].isWhiteSpace {
+                            if !prev_tokens[prev_tokens.len() - 1].is_ws {
                                 // Folded word case
                                 // "|...W|"
                                 // "|WC"
@@ -1728,7 +1673,7 @@ impl CopyRenderable {
                         if self.cursor.x == 0 {
                             // "|WsC" case
                             if prev_top != -1 {
-                                if !prev_tokens[prev_tokens.len() - 1].isWhiteSpace {
+                                if !prev_tokens[prev_tokens.len() - 1].is_ws {
                                     // "|...W|"
                                     // "|WsC"
                                     return self.backward_to_possible_previous_line();
@@ -1749,7 +1694,7 @@ impl CopyRenderable {
                     } else {
                         // "|sC" case
                         if prev_top != -1 {
-                            if prev_tokens.len() == 1 && prev_tokens[0].isWhiteSpace {
+                            if prev_tokens.len() == 1 && prev_tokens[0].is_ws {
                                 // Special case: move to the start of the previous empty line
                                 // "|s|"
                                 // "|sC"
@@ -1780,7 +1725,7 @@ impl CopyRenderable {
             let token_len = curr_tokens.len();
             if token_len == 0 { // "|c" case
                 if prev_top != -1 {
-                    if !prev_tokens[prev_tokens.len() - 1].isWhiteSpace {
+                    if !prev_tokens[prev_tokens.len() - 1].is_ws {
                         // Continue to search the last word in the previous line
                         // "|...W|"
                         // "|c"
@@ -1809,10 +1754,10 @@ impl CopyRenderable {
                     // "|c"
                 }
             } else {
-                if !curr_tokens[token_len - 1].isWhiteSpace { // "|Wc", "|sWc", "|...sWc" case
+                if !curr_tokens[token_len - 1].is_ws { // "|Wc", "|sWc", "|...sWc" case
                     if token_len == 1 { // "|Wc" case
                         if prev_top != -1 {
-                            if !prev_tokens[prev_tokens.len() - 1].isWhiteSpace {
+                            if !prev_tokens[prev_tokens.len() - 1].is_ws {
                                 // Folded word case
                                 // "|...W|"
                                 // "|Wc"
@@ -1841,7 +1786,7 @@ impl CopyRenderable {
                         if self.cursor.x == 0 {
                             // "|Wsc" case
                             if prev_top != -1 {
-                                if !prev_tokens[prev_tokens.len() - 1].isWhiteSpace {
+                                if !prev_tokens[prev_tokens.len() - 1].is_ws {
                                     // "|...W|"
                                     // "|Wsc"
                                     return self.backward_to_possible_previous_line();
@@ -1862,7 +1807,7 @@ impl CopyRenderable {
                     } else {
                         // "|sc" case
                         if prev_top != -1 {
-                            if prev_tokens.len() == 1 && prev_tokens[0].isWhiteSpace {
+                            if prev_tokens.len() == 1 && prev_tokens[0].is_ws {
                                 // Special case: move to the start of the previous empty line
                                 // "|s|"
                                 // "|sc"
