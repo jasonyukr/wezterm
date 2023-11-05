@@ -1046,6 +1046,24 @@ impl CopyRenderable {
         return None;
     }
 
+    fn find_first_whitespace_token(array: &Vec<WordToken>) -> Option<usize> {
+        for i in (0..array.len()) {
+            if array[i].isWhiteSpace {
+                return Some(i);
+            }
+        }
+        return None;
+    }
+
+    fn find_first_non_whitespace_token(array: &Vec<WordToken>) -> Option<usize> {
+        for i in (0..array.len()) {
+            if !array[i].isWhiteSpace {
+                return Some(i);
+            }
+        }
+        return None;
+    }
+
     fn guarantee_line_length(s: &str, cols: usize) -> String {
         let mut line = s.to_string();
         if line.len() < cols {
@@ -1056,7 +1074,7 @@ impl CopyRenderable {
         return line;
     }
 
-    fn collect_merged_tokens(s: &str) -> Vec<WordToken> {
+    fn collect_merged_tokens(s: &str, start_pos: usize) -> Vec<WordToken> {
         let mut array = Vec::new();
 
         let mut last = WordToken {
@@ -1065,7 +1083,7 @@ impl CopyRenderable {
             length: 0,
         };
 
-        let mut pos = 0;
+        let mut pos = start_pos;
         for (idx, word) in s.split_word_bounds().enumerate() {
             let len = unicode_column_width(word, None);
             let element = WordToken {
@@ -1130,6 +1148,20 @@ impl CopyRenderable {
         }
         let dims = self.delegate.get_dimensions();
         let (top, lines) = self.delegate.get_lines(y - 1..y);
+        if let Some(ln) = lines.get(0) {
+            let line = Self::guarantee_line_length(&ln.columns_as_str(0..dims.cols), dims.cols);
+            return (top, line);
+        }
+        return (-1, "".to_string());
+    }
+
+    fn get_next_line(&mut self) -> (isize, String) {
+        let dims = self.delegate.get_dimensions();
+        let y = self.cursor.y;
+        if y + 1 >= dims.scrollback_rows as isize {
+            return (-1, "".to_string());
+        }
+        let (top, lines) = self.delegate.get_lines(y + 1..y + 2);
         if let Some(ln) = lines.get(0) {
             let line = Self::guarantee_line_length(&ln.columns_as_str(0..dims.cols), dims.cols);
             return (top, line);
@@ -1275,102 +1307,292 @@ impl CopyRenderable {
     // mimic the behavior of vi "W" key
     fn forward_non_whitespace_words(&mut self) {
         let y = self.cursor.y;
-        let (top, lines) = self.delegate.get_lines(y..y + 1);
-        if let Some(line) = lines.get(0) {
-            self.cursor.y = top;
-            let dims = self.delegate.get_dimensions();
-            let info = self.peek_next_line_info();
-            let width = line.len();
-            if width == 0 {
-                match info {
-                    NextLineInfo::NoLine => {
-                    },
-                    NextLineInfo::EmptyLine => {
-                        self.cursor.y += 1;
-                        self.cursor.x = 0;
-                    },
-                    NextLineInfo::StartsWithChar => {
-                        self.cursor.y += 1;
-                        self.cursor.x = 0;
-                    },
-                    NextLineInfo::StartsWithOther => {
-                        self.cursor.y += 1;
-                        self.cursor.x = 0;
-                        return self.forward_non_whitespace_words();
-                    },
-                }
-            } else if let Some (cursor_ch) = line.columns_as_str(self.cursor.x..self.cursor.x + 1).chars().nth(0) {
-                let s = line.columns_as_str(self.cursor.x + 1..width + 1);
-                if cursor_ch.is_whitespace() { // if the cursor position character is whitespace
-                    if let Some(index) = Self::find_first_non_whitespace(&s) {
-                        self.cursor.x += index + 1;
+        let dims = self.delegate.get_dimensions();
+
+        let (curr_top, mut curr_line) = self.get_current_line();
+        let (next_top, mut next_line) = self.get_next_line();
+
+        if curr_top == -1 {
+            // logically not possible case
+        } else {
+            self.cursor.y = curr_top;
+        }
+
+        let cursor_char = curr_line.chars().nth(self.cursor.x).unwrap();
+
+        let curr_tokens = Self::collect_merged_tokens(&curr_line[self.cursor.x + 1..], self.cursor.x + 1);
+        let next_tokens = Self::collect_merged_tokens(&next_line, 0);
+
+        // log::info!("forward_non_whitespace_words: cursor_char=|{}| token-len={} curr_line=|{}|", cursor_char, curr_tokens.len(), curr_line);
+        // for i in (0..curr_tokens.len()) {
+        //     log::info!(" token[{}]: isWhitespace={} position={} length={}", i,
+        //                curr_tokens[i].isWhiteSpace, 
+        //                curr_tokens[i].position,
+        //                curr_tokens[i].length);
+        // }
+
+        /*
+           Word tokens
+           ==============================
+           '|'   : start/end of the line
+           'W'   : non-whitespace word
+           's'   : whitespace
+           'C'   : non-whitespace cursor
+           'c'   : whitespace cursor
+           '...' : any possible tokens
+         */
+        if !cursor_char.is_ascii_whitespace() { // if the cursor position character is non-whitespace
+            let token_len = curr_tokens.len();
+            if token_len == 0 { // "|...C|" case
+                if next_top != -1 {
+                    if !next_tokens[0].isWhiteSpace {
+                        // Folded word case
+                        // "|...C|"
+                        // "|W"
+                        return self.forward_to_possible_next_line();
                     } else {
-                        match info {
-                            NextLineInfo::NoLine => {
-                            },
-                            NextLineInfo::EmptyLine => {
-                                self.cursor.y += 1;
-                                self.cursor.x = 0;
-                            },
-                            NextLineInfo::StartsWithChar => {
-                                self.cursor.y += 1;
-                                self.cursor.x = 0;
-                            },
-                            NextLineInfo::StartsWithOther => {
-                                self.cursor.y += 1;
-                                self.cursor.x = 0;
-                                return self.forward_non_whitespace_words();
-                            },
+                        if next_tokens.len() == 1 {
+                            // Special case: move to the start of the next empty line
+                            // "|...C|"
+                            // "|s|"
+                            self.cursor.y += 1;
+                            self.cursor.x = 0;
+                        } else {
+                            // Continue to search the first word in the next line
+                            // "|...C|"
+                            // "|sW"
+                            self.cursor.y += 1;
+                            self.cursor.x = 0;
+                            return self.forward_non_whitespace_words();
                         }
                     }
-                } else { // if the cursor position character is non-whitespace
-                    if let Some(index) = Self::find_first_whitespace(&s) {
-                        self.cursor.x += index + 1;
-                        return self.forward_non_whitespace_words();
-                    } else {
-                        match info {
-                            NextLineInfo::NoLine => {
-                            },
-                            NextLineInfo::EmptyLine => {
-                                self.cursor.y += 1;
-                                self.cursor.x = 0;
-                            },
-                            NextLineInfo::StartsWithChar => {
-                                if self.cursor.x + s.len() + 1 < dims.cols {
+                } else {
+                    // Next line doesn't eixst: Just stay
+                    // "|...C|"
+                    // "----"
+                }
+            } else {
+                if !curr_tokens[0].isWhiteSpace { // "|...CW|", "|...CWs|", "|...CWsW|", "|...CWsWs...|" case
+                    if token_len == 1 { // "|...CW|" case
+                        if next_top != -1 {
+                            if !next_tokens[0].isWhiteSpace {
+                                // Folded word case
+                                // "|...CW|"
+                                // "|W" 
+                                return self.forward_to_possible_next_line();
+                            } else {
+                                if next_tokens.len() == 1 {
+                                    // Special case: move to the start of the next empty line
+                                    // "|...CW|"
+                                    // "|s|"
                                     self.cursor.y += 1;
                                     self.cursor.x = 0;
                                 } else {
+                                    // "|...CW|"
+                                    // "|sW"
+                                    self.cursor.y += 1;
+                                    self.cursor.x = next_tokens[1].position;
+                                }
+                            }
+                        } else {
+                            // Next line doesn't eixst: Just stay
+                            // "|...CW|"
+                            // "----"
+                        }
+                    } else if token_len == 2 { // "|...CWs|" case
+                        if next_top != -1 {
+                            if !next_tokens[0].isWhiteSpace {
+                                // "|...CWs|"
+                                // "|W"
+                                self.cursor.y += 1;
+                                self.cursor.x = 0;
+                            } else {
+                                if next_tokens.len() == 1 {
+                                    // Special case: move to the start of the next empty line
+                                    // "|...CWs|"
+                                    // "|s|"
+                                    self.cursor.y += 1;
+                                    self.cursor.x = 0;
+                                } else {
+                                    // Continue to search the first word in the next line
+                                    // "|...CWs|"
+                                    // "|sW"
                                     self.cursor.y += 1;
                                     self.cursor.x = 0;
                                     return self.forward_non_whitespace_words();
                                 }
-                            },
-                            NextLineInfo::StartsWithOther => {
+                            }
+                        } else {
+                            // Next line doesn't eixst: Just stay
+                            // "|...CWs|"
+                            // "----"
+                        }
+                    } else if token_len >= 3 { // "|...CWsW|", "|...CWsWs...|" case
+                        self.cursor.x = curr_tokens[2].position;
+                    }
+                } else { // "|...Cs|", "|...CsW|", "|...CsWs...|" case
+                    if token_len == 1 { // "|...Cs|" case
+                        if next_top != -1 {
+                            if !next_tokens[0].isWhiteSpace {
+                                // "|...Cs|"
+                                // "|W"
                                 self.cursor.y += 1;
                                 self.cursor.x = 0;
-                                return self.forward_non_whitespace_words();
-                            },
+                            } else {
+                                if next_tokens.len() == 1 {
+                                    // Special case: move to the start of the next empty line
+                                    // "|...Cs|"
+                                    // "|s|"
+                                    self.cursor.y += 1;
+                                    self.cursor.x = 0;
+                                } else {
+                                    // "|...Cs|"
+                                    // "|sW"
+                                    self.cursor.y += 1;
+                                    self.cursor.x = next_tokens[1].position;
+                                }
+                            }
+                        } else {
+                            // Next line doesn't eixst: Just stay
+                            // "|...Cs|"
+                            // "----"
                         }
+                    } else { // |...CsW|", "|...CsWs...|" case
+                        self.cursor.x = curr_tokens[1].position;
                     }
                 }
-            } else {
-                match info {
-                    NextLineInfo::NoLine => {
-                    },
-                    NextLineInfo::EmptyLine => {
+            }
+        } else { // if the cursor position character is whitespace
+            let token_len = curr_tokens.len();
+            if token_len == 0 { // "|c|" case
+                if next_top != -1 {
+                    if !next_tokens[0].isWhiteSpace {
+                        // "|c|"
+                        // "W"
                         self.cursor.y += 1;
                         self.cursor.x = 0;
-                    },
-                    NextLineInfo::StartsWithChar => {
-                        self.cursor.y += 1;
-                        self.cursor.x = 0;
-                    },
-                    NextLineInfo::StartsWithOther => {
-                        self.cursor.y += 1;
-                        self.cursor.x = 0;
-                        return self.forward_non_whitespace_words();
-                    },
+                    } else {
+                        if next_tokens.len() == 1 {
+                            // Special case: move to the start of the next empty line
+                            // "|c|"
+                            // "|s|"
+                            self.cursor.y += 1;
+                            self.cursor.x = 0;
+                        } else {
+                            // "|c|"
+                            // "|sW"
+                            self.cursor.y += 1;
+                            self.cursor.x = next_tokens[1].position;
+                        }
+                    }
+                } else {
+                    // Next line doesn't eixst: Just stay
+                    // "|c|"
+                    // "----"
                 }
+            } else {
+                if !curr_tokens[0].isWhiteSpace { // "|...cW|", "|...cWs|", "|...cWsW|", "|...cWsWs...|" case
+                    self.cursor.x = curr_tokens[0].position;
+                } else { // "|...cs|", "|...csW|", "|...csWs|", "|...csWs...|" case
+                    if token_len == 1 { // "|...cs|" case
+                        if next_top != -1 {
+                            if !next_tokens[0].isWhiteSpace {
+                                // "|...cs|"
+                                // "|W"
+                                self.cursor.y += 1;
+                                self.cursor.x = 0;
+                            } else {
+                                if next_tokens.len() == 1 {
+                                    // Special case: move to the start of the next empty line
+                                    // "|...cs|"
+                                    // "|s|"
+                                    self.cursor.y += 1;
+                                    self.cursor.x = 0;
+                                } else {
+                                    // "|...cs|"
+                                    // "|sW"
+                                    self.cursor.y += 1;
+                                    self.cursor.x = next_tokens[1].position;
+                                }
+                            }
+                        } else {
+                            // Next line doesn't eixst: Just stay
+                            // "|...cs|"
+                            // "----"
+                        }
+                    } else if token_len >= 2 { // "|...csW|", "|...csWs|", "|...csWs...|" case
+                        self.cursor.x = curr_tokens[1].position;
+                    }
+                }
+            }
+        }
+
+        self.select_to_cursor_pos();
+    }
+
+    // mimic the behavior of vi "W" key
+    fn forward_to_possible_next_line(&mut self) {
+        let old_y = self.cursor.y;
+        let old_x = self.cursor.x;
+        let (mut next_top, mut next_line) = self.get_next_line();
+        if next_top == -1 {
+            return;
+        }
+        let mut next_tokens = Self::collect_merged_tokens(&next_line, 0);
+        let mut token_len = next_tokens.len();
+        while token_len == 1 {
+            if !next_tokens[0].isWhiteSpace {
+                self.cursor.y += 1;
+                self.cursor.x = 0;
+                (next_top, next_line) = self.get_next_line();
+                next_tokens = Self::collect_merged_tokens(&next_line, 0);
+                token_len = next_tokens.len();
+                continue;
+            } else {
+                // "|s|"
+                self.cursor.y += 1;
+                self.cursor.x = 0;
+                break;
+            }
+        }
+
+        if token_len == 2 {
+            if !next_tokens[0].isWhiteSpace {
+                // "|Ws|"
+                self.cursor.y += 1;
+                let (next2_top, mut next2_line) = self.get_next_line();
+                if next2_top == -1 {
+                    // "|Ws|"
+                    // "----"
+                    self.cursor.y = old_y;
+                    self.cursor.x = old_x;
+                }
+                let next2_tokens = Self::collect_merged_tokens(&next2_line, 0);
+                if let Some(idx2) = Self::find_first_non_whitespace_token(&next2_tokens) {
+                    // "|Ws|"   // "|Ws|"
+                    // "|W"     // "|sW"
+                    self.cursor.y += 1;
+                    self.cursor.x = next2_tokens[idx2].position;
+                } else {
+                    // "|Ws|"
+                    // "|s|"
+                    self.cursor.y += 1;
+                    self.cursor.x = 0;
+                }
+            } else {
+                // "|sW|"
+                self.cursor.y += 1;
+                self.cursor.x = next_tokens[1].position;
+            }
+        } else {
+            if !next_tokens[0].isWhiteSpace {
+                // "|WsW"
+                self.cursor.y += 1;
+                self.cursor.x = next_tokens[2].position;
+            } else {
+                // "|sWs"
+                self.cursor.y += 1;
+                self.cursor.x = next_tokens[1].position;
             }
         }
         self.select_to_cursor_pos();
@@ -1382,7 +1604,7 @@ impl CopyRenderable {
             if prev_top == -1 {
                 break;
             }
-            let prev_tokens = Self::collect_merged_tokens(&prev_line);
+            let prev_tokens = Self::collect_merged_tokens(&prev_line, 0);
             let token_len = prev_tokens.len();
             if token_len == 0 {
                 // NOT possible
@@ -1419,12 +1641,18 @@ impl CopyRenderable {
             self.cursor.y = curr_top;
         }
 
-        // extract current cursor character and then truncate that
         let cursor_char = curr_line.chars().nth(self.cursor.x).unwrap();
-        curr_line.truncate(self.cursor.x);
 
-        let curr_tokens = Self::collect_merged_tokens(&curr_line);
-        let prev_tokens = Self::collect_merged_tokens(&prev_line);
+        let curr_tokens = Self::collect_merged_tokens(&curr_line[0..self.cursor.x], 0);
+        let prev_tokens = Self::collect_merged_tokens(&prev_line, 0);
+
+        // log::info!("backward_non_whitespace_words: cursor_char=|{}| token-len={} curr_line=|{}|", cursor_char, curr_tokens.len(), curr_line);
+        // for i in (0..curr_tokens.len()) {
+        //     log::info!(" token[{}]: isWhitespace={} position={} length={}", i,
+        //                curr_tokens[i].isWhiteSpace, 
+        //                curr_tokens[i].position,
+        //                curr_tokens[i].length);
+        // }
 
         /*
            Word tokens
@@ -1469,7 +1697,7 @@ impl CopyRenderable {
                 }
             } else {
                 if !curr_tokens[token_len - 1].isWhiteSpace { // "|WC", "|sWC", "|...sWC" case
-                    if token_len - 1 == 0 { // "|WC" case
+                    if token_len == 1 { // "|WC" case
                         if prev_top != -1 {
                             if !prev_tokens[prev_tokens.len() - 1].isWhiteSpace {
                                 // Folded word case
@@ -1582,7 +1810,7 @@ impl CopyRenderable {
                 }
             } else {
                 if !curr_tokens[token_len - 1].isWhiteSpace { // "|Wc", "|sWc", "|...sWc" case
-                    if token_len - 1 == 0 { // "|Wc" case
+                    if token_len == 1 { // "|Wc" case
                         if prev_top != -1 {
                             if !prev_tokens[prev_tokens.len() - 1].isWhiteSpace {
                                 // Folded word case
