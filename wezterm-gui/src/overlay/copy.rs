@@ -1244,8 +1244,7 @@ impl CopyRenderable {
                             // "|...C|"
                             // "|sW"
                             self.cursor.y += 1;
-                            self.cursor.x = 0;
-                            return self.forward_non_whitespace_words();
+                            self.cursor.x = next_tokens[1].position;
                         }
                     }
                 } else {
@@ -1300,8 +1299,7 @@ impl CopyRenderable {
                                     // "|...CWs|"
                                     // "|sW"
                                     self.cursor.y += 1;
-                                    self.cursor.x = 0;
-                                    return self.forward_non_whitespace_words();
+                                    self.cursor.x = next_tokens[1].position;
                                 }
                             }
                         } else {
