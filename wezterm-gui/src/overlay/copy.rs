@@ -1408,7 +1408,6 @@ impl CopyRenderable {
                 }
             }
         }
-
         self.select_to_cursor_pos();
     }
 
