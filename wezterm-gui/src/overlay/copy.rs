@@ -1281,7 +1281,6 @@ impl CopyRenderable {
                                         // Folded line ended. Take the next word
                                         self.cursor.y += inc as isize;
                                         self.cursor.x = next_line_tokens[1].position;
-                                        return self.vi_mode_forward_to_word_start();
                                         break;
                                     }
                                 }
@@ -1332,6 +1331,108 @@ impl CopyRenderable {
     }
 
     fn vi_mode_backward_to_word_start(&mut self) {
+        let dims = self.delegate.get_dimensions();
+        let y = self.cursor.y as usize;
+        if let Some(curr_line_tokens) = self.get_line_tokens(y) {
+            for i in (0..curr_line_tokens.len()) {
+                log::info!("curr_line_token[{}]: is_word={} position={} length={}", i, curr_line_tokens[i].is_word, curr_line_tokens[i].position, curr_line_tokens[i].length);
+            }
+            if let Some(idx) = Self::get_matched_token(&curr_line_tokens, self.cursor.x) {
+log::info!("idx={}", idx);
+                if curr_line_tokens[idx].is_word {
+                    let cursor_in_start_pos = curr_line_tokens[idx].position == self.cursor.x;
+                    if idx == 0 {
+                        // if current word-token is the first token in the line,
+                        // check the folded line case with loop
+                        if let Some(prev_line_tokens) = self.get_line_tokens(y - 1) { // if the prev line exists
+                            if prev_line_tokens[prev_line_tokens.len() - 1].is_word {
+                                return self.backward_to_possible_previous_line();
+                            } else {
+                                if self.cursor.x != curr_line_tokens[idx].position {
+                                    // Make sure that cursor is in token start position
+                                    self.cursor.x = curr_line_tokens[idx].position;
+                                    self.select_to_cursor_pos();
+                                    return;
+                                }
+                                if prev_line_tokens.len() == 1 && !prev_line_tokens[0].is_word {
+                                    self.cursor.y -= 1;
+                                    self.cursor.x = 0;
+                                    self.select_to_cursor_pos();
+                                    return;
+                                }
+                                self.cursor.y -= 1;
+                                self.cursor.x = prev_line_tokens[prev_line_tokens.len() - 1].position;
+                                return self.vi_mode_backward_to_word_start();
+                            }
+                        }
+                    } else if idx >= 1 {
+                        // Make sure that cursor is in token start position
+                        if self.cursor.x != curr_line_tokens[idx].position {
+                            self.cursor.x = curr_line_tokens[idx].position;
+                            self.select_to_cursor_pos();
+                            return;
+                        }
+                    }
+
+                    if idx == 1 {
+                        // "|sC...|"
+                        if let Some(prev_line_tokens) = self.get_line_tokens(y - 1) { // if the previous line exists
+                            if prev_line_tokens.len() == 1 && !prev_line_tokens[0].is_word {
+                                // "|s|"
+                                // "|sC...|"
+                                // Special case: move to the start of the prev empty line
+                                self.cursor.y -= 1;
+                                self.cursor.x = 0;
+                                self.select_to_cursor_pos();
+                                return;
+                            } else {
+                                self.cursor.y -= 1;
+                                self.cursor.x = dims.cols - 1;
+                                return self.vi_mode_backward_to_word_start();
+                            }
+                        }
+                    } else if idx == 2 {
+                        // "|WsC...|"
+                        self.cursor.x = curr_line_tokens[idx - 1].position - 1;
+                        return self.vi_mode_backward_to_word_start();
+                    } else if idx > 2 {
+                        // "|...sWsC...|"
+                        self.cursor.x = curr_line_tokens[idx - 2].position;
+                        self.select_to_cursor_pos();
+                        return;
+                    }
+                } else {
+
+                    if idx == 0 {
+                        // "|c...|"
+                        if let Some(prev_line_tokens) = self.get_line_tokens(y - 1) { // if the previous line exists
+                            if prev_line_tokens.len() == 1 && !prev_line_tokens[0].is_word {
+                                // "|s|"
+                                // "|c...|"
+                                // Special case: move to the start of the prev empty line
+                                self.cursor.y -= 1;
+                                self.cursor.x = 0;
+                                self.select_to_cursor_pos();
+                                return;
+                            } else {
+                                self.cursor.y -= 1;
+                                self.cursor.x = dims.cols - 1;
+                                return self.vi_mode_backward_to_word_start();
+                            }
+                        }
+                    } else if idx == 1 {
+                        // "|Wc...|"
+                        self.cursor.x = curr_line_tokens[idx].position - 1;
+                        return self.vi_mode_backward_to_word_start();
+                    } else if idx > 1 {
+                        // "|...Wc...|"
+                        self.cursor.x = curr_line_tokens[idx - 1].position;
+                        self.select_to_cursor_pos();
+                        return;
+                    }
+                }
+            }
+        }
     }
 
     // mimic the behavior of vi "W" key
