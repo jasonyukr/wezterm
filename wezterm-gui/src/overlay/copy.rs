@@ -1403,7 +1403,7 @@ impl CopyRenderable {
                                 // "|c...|"
                                 self.cursor.y = (y - 1) as isize;
                                 self.cursor.x = 0;
-                                return self.vi_mode_backward_to_word_start(false);
+                                return self.vi_mode_backward_to_word_start(true);
                             } else {
                                 // "|s|"
                                 // "|c...|"
