@@ -1407,22 +1407,31 @@ impl CopyRenderable {
 log::info!("cursor.x={} cursor.y={} fold.x={} fold.y={}", self.cursor.x, self.cursor.y, folded_start_x, folded_start_y);
                         if self.cursor.y == folded_start_y as isize && self.cursor.x == folded_start_x {
                             if jump_done {
+                                // Jump between words already happened.
+                                // In this case, there's no reason to look up the words for jumping.
                                 return;
                             }
                             if let Some(prev_line_tokens) = self.get_line_full_tokens(y - 1) {
                                 if prev_line_tokens.len() == 1 {
                                     if !prev_line_tokens[0].is_word {
+                                        // "|s|"
+                                        // "|C...|"
+                                        // Special case: move to the start of the prev empty line
                                         self.cursor.y = (y - 1) as isize;
                                         self.cursor.x = 0;
                                         self.select_to_cursor_pos();
                                         return;
                                     }
                                 }
+                                // "|...Ws|"
+                                // "|C...|"
+                                // Continue to find the jump target word from the prev line
                                 self.cursor.y = (y - 1) as isize;
                                 self.cursor.x = dims.cols - 1;
                                 return self.vi_mode_backward_to_word_start(false);
                             }
                         } else {
+                            // Go to the start position of the current word
                             self.cursor.y = folded_start_y as isize;
                             self.cursor.x = folded_start_x;
                             self.select_to_cursor_pos();
@@ -1433,7 +1442,10 @@ log::info!("cursor.x={} cursor.y={} fold.x={} fold.y={}", self.cursor.x, self.cu
                     return;
                 }
 
+                /////////////////////////////////
+                // "|...sC...|"
                 if self.cursor.x != curr_line_tokens[idx].position {
+                    // Go to the start position of the current word if needed
                     self.cursor.x = curr_line_tokens[idx].position;
                     self.select_to_cursor_pos();
                     return;
@@ -1464,8 +1476,6 @@ log::info!("cursor.x={} cursor.y={} fold.x={} fold.y={}", self.cursor.x, self.cu
                                 // "|sC...|"
                                 self.cursor.y = (y - 1) as isize;
                                 self.cursor.x = prev_line_tokens[1].position;
-                                self.select_to_cursor_pos();
-                                return;
                             } else {
                                 // "|Ws|"
                                 // "|sC...|"
@@ -1479,15 +1489,11 @@ log::info!("cursor.x={} cursor.y={} fold.x={} fold.y={}", self.cursor.x, self.cu
                                 // "|sC...|"
                                 self.cursor.y = (y - 1) as isize;
                                 self.cursor.x = prev_line_tokens[prev_line_tokens.len() - 1].position;
-                                self.select_to_cursor_pos();
-                                return;
                             } else {
                                 // "|...sWs|"
                                 // "|sC...|"
                                 self.cursor.y = (y - 1) as isize;
                                 self.cursor.x = prev_line_tokens[prev_line_tokens.len() - 2].position;
-                                self.select_to_cursor_pos();
-                                return;
                             }
                         }
                     }
@@ -1498,9 +1504,9 @@ log::info!("cursor.x={} cursor.y={} fold.x={} fold.y={}", self.cursor.x, self.cu
                 } else if curr_line_tokens.len() >= 4 {
                     // "|...sWsC...|"
                     self.cursor.x = curr_line_tokens[idx - 2].position;
-                    self.select_to_cursor_pos();
-                    return;
                 }
+                self.select_to_cursor_pos();
+                return;
             } else {
                 if curr_line_tokens.len() == 1 {
                     // "|c...|"
@@ -1518,8 +1524,6 @@ log::info!("cursor.x={} cursor.y={} fold.x={} fold.y={}", self.cursor.x, self.cu
                                 // Special case: move to the start of the prev empty line
                                 self.cursor.y = (y - 1) as isize;
                                 self.cursor.x = 0;
-                                self.select_to_cursor_pos();
-                                return;
                             }
                         } else if prev_line_tokens.len() == 2 {
                             if prev_line_tokens[1].is_word {
@@ -1527,7 +1531,6 @@ log::info!("cursor.x={} cursor.y={} fold.x={} fold.y={}", self.cursor.x, self.cu
                                 // "|c...|"
                                 self.cursor.y = (y - 1) as isize;
                                 self.cursor.x = prev_line_tokens[1].position;
-                                self.select_to_cursor_pos();
                             } else {
                                 // "|Ws|"
                                 // "|c...|"
@@ -1541,15 +1544,11 @@ log::info!("cursor.x={} cursor.y={} fold.x={} fold.y={}", self.cursor.x, self.cu
                                 // "|c...|"
                                 self.cursor.y = (y - 1) as isize;
                                 self.cursor.x = prev_line_tokens[prev_line_tokens.len() - 1].position;
-                                self.select_to_cursor_pos();
-                                return;
                             } else {
                                 // "|...sWs|"
                                 // "|c...|"
                                 self.cursor.y = (y - 1) as isize;
                                 self.cursor.x = prev_line_tokens[prev_line_tokens.len() - 2].position;
-                                self.select_to_cursor_pos();
-                                return;
                             }
                         }
                     }
@@ -1560,9 +1559,9 @@ log::info!("cursor.x={} cursor.y={} fold.x={} fold.y={}", self.cursor.x, self.cu
                 } else if curr_line_tokens.len() >= 3 {
                     // "|...sWc...|"
                     self.cursor.x = curr_line_tokens[idx - 1].position;
-                    self.select_to_cursor_pos();
-                    return;
                 }
+                self.select_to_cursor_pos();
+                return;
             }
         }
     }
