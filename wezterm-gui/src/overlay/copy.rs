@@ -1344,6 +1344,7 @@ impl CopyRenderable {
                             if prev_line_tokens[0].is_word {
                                 // "|W|"
                                 // "|sC...|"
+                                // Continue to check folded-word with the prev line (jump happened)
                                 self.cursor.y = (y - 1) as isize;
                                 self.cursor.x = 0;
                                 return self.vi_mode_backward_to_word_start(true);
@@ -1356,31 +1357,13 @@ impl CopyRenderable {
                                 self.select_to_cursor_pos();
                                 return;
                             }
-                        } else if prev_line_tokens.len() == 2 {
-                            if prev_line_tokens[1].is_word {
-                                // "|sW|"
-                                // "|sC...|"
-                                self.cursor.y = (y - 1) as isize;
-                                self.cursor.x = prev_line_tokens[1].position;
-                            } else {
-                                // "|Ws|"
-                                // "|sC...|"
-                                self.cursor.y = (y - 1) as isize;
-                                self.cursor.x = 0;
-                                return self.vi_mode_backward_to_word_start(true);
-                            }
-                        } else if prev_line_tokens.len() >= 3 {
-                            if prev_line_tokens[prev_line_tokens.len() - 1].is_word {
-                                // "|...WsW|"
-                                // "|sC...|"
-                                self.cursor.y = (y - 1) as isize;
-                                self.cursor.x = prev_line_tokens[prev_line_tokens.len() - 1].position;
-                            } else {
-                                // "|...sWs|"
-                                // "|sC...|"
-                                self.cursor.y = (y - 1) as isize;
-                                self.cursor.x = prev_line_tokens[prev_line_tokens.len() - 2].position;
-                            }
+                        } else {
+                            // "|...sW|"   "|...Ws|"
+                            // "|sC...|"   "|sC...|"
+                            // Continue to find the word from the prev line (jump happened)
+                            self.cursor.y = (y - 1) as isize;
+                            self.cursor.x = dims.cols - 1;
+                            return self.vi_mode_backward_to_word_start(true);
                         }
                     }
                 } else if curr_line_tokens.len() == 3 {
@@ -1401,6 +1384,7 @@ impl CopyRenderable {
                             if prev_line_tokens[0].is_word {
                                 // "|W|"
                                 // "|c...|"
+                                // Continue to check folded-word with the prev line (jump happened)
                                 self.cursor.y = (y - 1) as isize;
                                 self.cursor.x = 0;
                                 return self.vi_mode_backward_to_word_start(true);
@@ -1411,31 +1395,13 @@ impl CopyRenderable {
                                 self.cursor.y = (y - 1) as isize;
                                 self.cursor.x = 0;
                             }
-                        } else if prev_line_tokens.len() == 2 {
-                            if prev_line_tokens[1].is_word {
-                                // "|sW|"
-                                // "|c...|"
-                                self.cursor.y = (y - 1) as isize;
-                                self.cursor.x = prev_line_tokens[1].position;
-                            } else {
-                                // "|Ws|"
-                                // "|c...|"
-                                self.cursor.y = (y - 1) as isize;
-                                self.cursor.x = 0;
-                                return self.vi_mode_backward_to_word_start(true);
-                            }
-                        } else if prev_line_tokens.len() >= 3 {
-                            if prev_line_tokens[prev_line_tokens.len() - 1].is_word {
-                                // "|...WsW|"
-                                // "|c...|"
-                                self.cursor.y = (y - 1) as isize;
-                                self.cursor.x = prev_line_tokens[prev_line_tokens.len() - 1].position;
-                            } else {
-                                // "|...sWs|"
-                                // "|c...|"
-                                self.cursor.y = (y - 1) as isize;
-                                self.cursor.x = prev_line_tokens[prev_line_tokens.len() - 2].position;
-                            }
+                        } else {
+                            // "|...sW|"    "|...Ws|"
+                            // "|c....|"    "|c....|"
+                            // Continue to find the word from the prev line (jump happened)
+                            self.cursor.y = (y - 1) as isize;
+                            self.cursor.x = dims.cols - 1;
+                            return self.vi_mode_backward_to_word_start(true);
                         }
                     }
                 } else if curr_line_tokens.len() == 2 {
