@@ -1357,7 +1357,42 @@ impl CopyRenderable {
         }
     }
 
-    fn vi_mode_backward_to_word_start(&mut self) {
+    fn get_folded_word_start_position(&mut self, y: usize) -> Option<(usize, usize)> {
+        let mut dec = 0;
+        while y - dec >= 0 {
+            dec += 1;
+            if let Some(line_tokens) = self.get_line_full_tokens(y - dec) {
+                let token_len = line_tokens.len();
+                if token_len == 1 {
+                    if line_tokens[0].is_word {
+                        // "|W|"
+                        // continue due to folded-word
+                        continue;
+                    } else {
+                        // "|s|"
+                        // The last line was start of folded-word
+                        return Some((0, y - dec + 1));
+                    }
+                } if token_len >= 2 {
+                    if line_tokens[token_len - 1].is_word {
+                        // "|...sW|"
+                        // "W" is start of folded-word
+                        return Some((line_tokens[token_len - 1].position, y - dec));
+                    } else {
+                        // "|...Ws|"
+                        // The last line was start of folded-word
+                        return Some((0, y - dec + 1));
+                    }
+                }
+            } else {
+                // The last line was start of folded-word
+                return Some((0, y - dec + 1));
+            }
+        }
+        return None;
+    }
+
+    fn vi_mode_backward_to_word_start(&mut self, jump_done: bool) {
         let dims = self.delegate.get_dimensions();
         let y = self.cursor.y as usize;
         if let Some(curr_line_tokens) = self.get_line_partial_tokens(y, TokenGenMode::ToCursor, self.cursor.x) {
@@ -1368,17 +1403,34 @@ impl CopyRenderable {
             if curr_line_tokens[idx].is_word {
                 if curr_line_tokens.len() == 1 {
                     // "|C...|"
-                    ///////////////////////////////////////////////////////
-                    // if current word-token is the first token in the line,
-                    // check the folded line case with loop
-                    let mut dec = 0;
-                    while y - dec >= 0 {
-                        dec += 1;
-                        //TODO
+                    if let Some((folded_start_x, folded_start_y)) = self.get_folded_word_start_position(y) {
+log::info!("cursor.x={} cursor.y={} fold.x={} fold.y={}", self.cursor.x, self.cursor.y, folded_start_x, folded_start_y);
+                        if self.cursor.y == folded_start_y as isize && self.cursor.x == folded_start_x {
+                            if jump_done {
+                                return;
+                            }
+                            if let Some(prev_line_tokens) = self.get_line_full_tokens(y - 1) {
+                                if prev_line_tokens.len() == 1 {
+                                    if !prev_line_tokens[0].is_word {
+                                        self.cursor.y = (y - 1) as isize;
+                                        self.cursor.x = 0;
+                                        self.select_to_cursor_pos();
+                                        return;
+                                    }
+                                }
+                                self.cursor.y = (y - 1) as isize;
+                                self.cursor.x = dims.cols - 1;
+                                return self.vi_mode_backward_to_word_start(false);
+                            }
+                        } else {
+                            self.cursor.y = folded_start_y as isize;
+                            self.cursor.x = folded_start_x;
+                            self.select_to_cursor_pos();
+                            return;
+                        }
                     }
                     self.select_to_cursor_pos();
                     return;
-                    ///////////////////////////////////////////////////////
                 }
 
                 if self.cursor.x != curr_line_tokens[idx].position {
@@ -1396,7 +1448,7 @@ impl CopyRenderable {
                                 // "|sC...|"
                                 self.cursor.y = (y - 1) as isize;
                                 self.cursor.x = 0;
-                                return self.vi_mode_backward_to_word_start();
+                                return self.vi_mode_backward_to_word_start(true);
                             } else {
                                 // "|s|"
                                 // "|sC...|"
@@ -1419,7 +1471,7 @@ impl CopyRenderable {
                                 // "|sC...|"
                                 self.cursor.y = (y - 1) as isize;
                                 self.cursor.x = 0;
-                                return self.vi_mode_backward_to_word_start();
+                                return self.vi_mode_backward_to_word_start(true);
                             }
                         } else if prev_line_tokens.len() >= 3 {
                             if prev_line_tokens[prev_line_tokens.len() - 1].is_word {
@@ -1442,7 +1494,7 @@ impl CopyRenderable {
                 } else if curr_line_tokens.len() == 3 {
                     // "|WsC...|"
                     self.cursor.x = curr_line_tokens[idx - 2].position;
-                    return self.vi_mode_backward_to_word_start();
+                    return self.vi_mode_backward_to_word_start(true);
                 } else if curr_line_tokens.len() >= 4 {
                     // "|...sWsC...|"
                     self.cursor.x = curr_line_tokens[idx - 2].position;
@@ -1459,7 +1511,7 @@ impl CopyRenderable {
                                 // "|c...|"
                                 self.cursor.y = (y - 1) as isize;
                                 self.cursor.x = 0;
-                                return self.vi_mode_backward_to_word_start();
+                                return self.vi_mode_backward_to_word_start(false);
                             } else {
                                 // "|s|"
                                 // "|c...|"
@@ -1481,7 +1533,7 @@ impl CopyRenderable {
                                 // "|c...|"
                                 self.cursor.y = (y - 1) as isize;
                                 self.cursor.x = 0;
-                                return self.vi_mode_backward_to_word_start();
+                                return self.vi_mode_backward_to_word_start(true);
                             }
                         } else if prev_line_tokens.len() >= 3 {
                             if prev_line_tokens[prev_line_tokens.len() - 1].is_word {
@@ -1504,7 +1556,7 @@ impl CopyRenderable {
                 } else if curr_line_tokens.len() == 2 {
                     // "|Wc...|"
                     self.cursor.x = curr_line_tokens[idx - 1].position;
-                    return self.vi_mode_backward_to_word_start();
+                    return self.vi_mode_backward_to_word_start(true);
                 } else if curr_line_tokens.len() >= 3 {
                     // "|...sWc...|"
                     self.cursor.x = curr_line_tokens[idx - 1].position;
@@ -2354,7 +2406,7 @@ impl Pane for CopyOverlay {
                     ForwardNonWSWords => render.forward_non_whitespace_words(),
                     BackwardNonWSWords => render.backward_non_whitespace_words(),
                     ViModeForwardToWordStart => render.vi_mode_forward_to_word_start(),
-                    ViModeBackwardToWordStart => render.vi_mode_backward_to_word_start(),
+                    ViModeBackwardToWordStart => render.vi_mode_backward_to_word_start(false),
                     MoveRight => render.move_right_single_cell(),
                     MoveLeft => render.move_left_single_cell(),
                     MoveUp => render.move_up_single_row(),
