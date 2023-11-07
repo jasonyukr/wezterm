@@ -118,6 +118,12 @@ struct Token {
     length: usize,
 }
 
+enum TokenGenMode {
+    All,
+    FromCursor,
+    ToCursor,
+}
+
 impl CopyOverlay {
     pub fn with_pane(
         term_window: &TermWindow,
@@ -1024,14 +1030,29 @@ impl CopyRenderable {
         array
     }
 
-    fn get_line_tokens(&mut self, y: usize) -> Option<Vec<Token>> {
+
+    fn get_line_full_tokens(&mut self, y: usize) -> Option<Vec<Token>> {
+        return self.get_line_partial_tokens(y, TokenGenMode::All, 0);
+    }
+
+    fn get_line_partial_tokens(&mut self, y: usize, mode: TokenGenMode, cursor_x: usize) -> Option<Vec<Token>> {
         let dims = self.delegate.get_dimensions();
         if y >= dims.scrollback_rows {
             return None;
         }
         let (_top, lines) = self.delegate.get_lines(y as isize..(y + 1) as isize);
         if let Some(ln) = lines.get(0) {
-            let line = Self::guarantee_line_length(&ln.columns_as_str(0..dims.cols), dims.cols);
+            let mut line = Self::guarantee_line_length(&ln.columns_as_str(0..dims.cols), dims.cols);
+            match mode {
+                TokenGenMode::FromCursor => {
+                    line = line[cursor_x..].to_string();
+                },
+                TokenGenMode::ToCursor => {
+                    line = line[0..cursor_x + 1].to_string();
+                },
+                _ => {},
+            }
+            Self::guarantee_line_length(&ln.columns_as_str(0..dims.cols), dims.cols);
             let mut array = Vec::new();
             let mut last = Token {
                 is_word: false,
@@ -1039,6 +1060,9 @@ impl CopyRenderable {
                 length: 0,
             };
             let mut pos = 0;
+            if matches!(mode, TokenGenMode::FromCursor) {
+                pos = cursor_x;
+            }
             for (_, word) in line.split_word_bounds().enumerate() {
                 let len = unicode_column_width(word, None);
                 let element = Token {
@@ -1250,82 +1274,85 @@ impl CopyRenderable {
     fn vi_mode_forward_to_word_start(&mut self) {
         let dims = self.delegate.get_dimensions();
         let y = self.cursor.y as usize;
-        if let Some(curr_line_tokens) = self.get_line_tokens(y) {
-            // for i in (0..curr_line_tokens.len()) {
-            //     log::info!("curr_line_token[{}]: is_word={} position={} length={}", i, curr_line_tokens[i].is_word, curr_line_tokens[i].position, curr_line_tokens[i].length);
-            // }
-            if let Some(idx) = Self::get_matched_token(&curr_line_tokens, self.cursor.x) {
-                if curr_line_tokens[idx].is_word {
-                    if idx + 1 == curr_line_tokens.len() {
-                        // if current word-token is the last token in the line,
-                        // check the folded line case with loop
-                        for inc in 1..dims.scrollback_rows - y {
-                            if let Some(next_line_tokens) = self.get_line_tokens(y + inc) { // if the next line exists
-                                if next_line_tokens.len() == 1 {
-                                    if next_line_tokens[0].is_word {
-                                        // consume the line and continue
-                                        continue;
-                                    } else {
-                                        // Special case: move to the start of the next empty line
-                                        self.cursor.y += inc as isize;
-                                        self.cursor.x = 0;
-                                        break;
-                                    }
+        if let Some(curr_line_tokens) = self.get_line_partial_tokens(y, TokenGenMode::FromCursor, self.cursor.x) {
+            for i in 0..curr_line_tokens.len() {
+                log::info!("curr_line_token[{}]: is_word={} position={} length={}", i, curr_line_tokens[i].is_word, curr_line_tokens[i].position, curr_line_tokens[i].length);
+            }
+            if curr_line_tokens[0].is_word {
+                if curr_line_tokens.len() == 1 {
+                    ///////////////////////////////////////////////////////
+                    // if current word-token is the last token in the line,
+                    // check the folded line case with loop
+                    for inc in 1..dims.scrollback_rows - y {
+                        if let Some(next_line_tokens) = self.get_line_full_tokens(y + inc) { // if the next line exists
+                            if next_line_tokens.len() == 1 {
+                                if next_line_tokens[0].is_word {
+                                    // consume the line and continue
+                                    continue;
                                 } else {
-                                    if next_line_tokens[0].is_word {
-                                        // Folded line ended. Continue to search the next word
-                                        self.cursor.y += inc as isize;
-                                        self.cursor.x = next_line_tokens[1].position;
-                                        return self.vi_mode_forward_to_word_start();
-                                    } else {
-                                        // Folded line ended. Take the next word
-                                        self.cursor.y += inc as isize;
-                                        self.cursor.x = next_line_tokens[1].position;
-                                        break;
-                                    }
+                                    // Special case: move to the start of the next empty line
+                                    self.cursor.y = (y + inc) as isize;
+                                    self.cursor.x = 0;
+                                    break;
                                 }
-                            } else { // next line doesn't exist: logically not possible
-                                break;
+                            } else {
+                                if next_line_tokens[0].is_word {
+                                    // Folded line ended. Continue to search the next word
+                                    self.cursor.y = (y + inc) as isize;
+                                    self.cursor.x = next_line_tokens[1].position;
+                                    return self.vi_mode_forward_to_word_start();
+                                } else {
+                                    // Folded line ended. Take the next word
+                                    self.cursor.y = (y + inc) as isize;
+                                    self.cursor.x = next_line_tokens[1].position;
+                                    break;
+                                }
                             }
+                        } else {
+                            // next line doesn't exist
+                            break;
                         }
-                        self.select_to_cursor_pos();
-                        return;
-                    } else if idx + 3 <= curr_line_tokens.len() {
-                        // This line has next word. Take that.
-                        self.cursor.x = curr_line_tokens[idx + 2].position;
-                        self.select_to_cursor_pos();
-                        return;
                     }
-                } else if !curr_line_tokens[idx].is_word && idx + 1 != curr_line_tokens.len() {
-                    // if current whitespace-token is not the last token in the line,
-                    // Take the next token which is obviously word token
-                    self.cursor.x = curr_line_tokens[idx + 1].position;
+                    self.select_to_cursor_pos();
+                    return;
+                    ///////////////////////////////////////////////////////
+                } else if curr_line_tokens.len() >= 3 {
+                    // This line has next word. Take that.
+                    self.cursor.x = curr_line_tokens[2].position;
                     self.select_to_cursor_pos();
                     return;
                 }
-
-                // lookup next line
-                if let Some(next_line_tokens) = self.get_line_tokens(y + 1) { // if the next line exists
-                    // for i in (0..next_line_tokens.len()) {
-                    //     log::info!("next_line_token[{}]: is_word={} position={} length={}", i, next_line_tokens[i].is_word, next_line_tokens[i].position, next_line_tokens[i].length);
-                    // }
-                    if next_line_tokens.len() == 1 && !next_line_tokens[0].is_word {
-                        // Special case: move to the start of the next empty line
-                        self.cursor.y += 1;
-                        self.cursor.x = 0;
-                    } else {
-                        if next_line_tokens[0].is_word {
-                            // if the first token is word, take that
-                            self.cursor.y += 1;
-                            self.cursor.x = next_line_tokens[0].position;
-                        } else {
-                            // if the first token is whitespace, take the second token (word-token)
-                            self.cursor.y += 1;
-                            self.cursor.x = next_line_tokens[1].position;
-                        }
-                    }
+            } else {
+                if curr_line_tokens.len() > 1 {
+                    // if current whitespace-token is not the last token in the line,
+                    // Take the next token which is obviously word token
+                    self.cursor.x = curr_line_tokens[1].position;
                     self.select_to_cursor_pos();
+                    return;
                 }
+            }
+
+            // lookup next line
+            if let Some(next_line_tokens) = self.get_line_full_tokens(y + 1) { // if the next line exists
+                for i in 0..next_line_tokens.len() {
+                    log::info!("next_line_token[{}]: is_word={} position={} length={}", i, next_line_tokens[i].is_word, next_line_tokens[i].position, next_line_tokens[i].length);
+                }
+                if next_line_tokens.len() == 1 && !next_line_tokens[0].is_word {
+                    // Special case: move to the start of the next empty line
+                    self.cursor.y += 1;
+                    self.cursor.x = 0;
+                } else {
+                    if next_line_tokens[0].is_word {
+                        // if the first token is word, take that
+                        self.cursor.y += 1;
+                        self.cursor.x = next_line_tokens[0].position;
+                    } else {
+                        // if the first token is whitespace, take the second token (word-token)
+                        self.cursor.y += 1;
+                        self.cursor.x = next_line_tokens[1].position;
+                    }
+                }
+                self.select_to_cursor_pos();
             }
         }
     }
