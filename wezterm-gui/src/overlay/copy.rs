@@ -1396,15 +1396,15 @@ impl CopyRenderable {
         let dims = self.delegate.get_dimensions();
         let y = self.cursor.y as usize;
         if let Some(curr_line_tokens) = self.get_line_partial_tokens(y, TokenGenMode::ToCursor, self.cursor.x) {
-            for i in 0..curr_line_tokens.len() {
-                log::info!("curr_line_token[{}]: is_word={} position={} length={}", i, curr_line_tokens[i].is_word, curr_line_tokens[i].position, curr_line_tokens[i].length);
-            }
+            // for i in 0..curr_line_tokens.len() {
+            //     log::info!("curr_line_token[{}]: is_word={} position={} length={}", i, curr_line_tokens[i].is_word, curr_line_tokens[i].position, curr_line_tokens[i].length);
+            // }
             let idx = curr_line_tokens.len() - 1;
             if curr_line_tokens[idx].is_word {
                 if curr_line_tokens.len() == 1 {
                     // "|C...|"
                     if let Some((folded_start_x, folded_start_y)) = self.get_folded_word_start_position(y) {
-log::info!("cursor.x={} cursor.y={} fold.x={} fold.y={}", self.cursor.x, self.cursor.y, folded_start_x, folded_start_y);
+                        // log::info!("cursor.x={} cursor.y={} fold.x={} fold.y={}", self.cursor.x, self.cursor.y, folded_start_x, folded_start_y);
                         if self.cursor.y == folded_start_y as isize && self.cursor.x == folded_start_x {
                             if jump_done {
                                 // Jump between words already happened.
