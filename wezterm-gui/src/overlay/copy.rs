@@ -1275,9 +1275,9 @@ impl CopyRenderable {
         let dims = self.delegate.get_dimensions();
         let y = self.cursor.y as usize;
         if let Some(curr_line_tokens) = self.get_line_partial_tokens(y, TokenGenMode::FromCursor, self.cursor.x) {
-            for i in 0..curr_line_tokens.len() {
-                log::info!("curr_line_token[{}]: is_word={} position={} length={}", i, curr_line_tokens[i].is_word, curr_line_tokens[i].position, curr_line_tokens[i].length);
-            }
+            // for i in 0..curr_line_tokens.len() {
+            //     log::info!("curr_line_token[{}]: is_word={} position={} length={}", i, curr_line_tokens[i].is_word, curr_line_tokens[i].position, curr_line_tokens[i].length);
+            // }
             if curr_line_tokens[0].is_word {
                 if curr_line_tokens.len() == 1 {
                     ///////////////////////////////////////////////////////
@@ -1334,9 +1334,9 @@ impl CopyRenderable {
 
             // lookup next line
             if let Some(next_line_tokens) = self.get_line_full_tokens(y + 1) { // if the next line exists
-                for i in 0..next_line_tokens.len() {
-                    log::info!("next_line_token[{}]: is_word={} position={} length={}", i, next_line_tokens[i].is_word, next_line_tokens[i].position, next_line_tokens[i].length);
-                }
+                // for i in 0..next_line_tokens.len() {
+                //     log::info!("next_line_token[{}]: is_word={} position={} length={}", i, next_line_tokens[i].is_word, next_line_tokens[i].position, next_line_tokens[i].length);
+                // }
                 if next_line_tokens.len() == 1 && !next_line_tokens[0].is_word {
                     // Special case: move to the start of the next empty line
                     self.cursor.y += 1;
@@ -1358,6 +1358,161 @@ impl CopyRenderable {
     }
 
     fn vi_mode_backward_to_word_start(&mut self) {
+        let dims = self.delegate.get_dimensions();
+        let y = self.cursor.y as usize;
+        if let Some(curr_line_tokens) = self.get_line_partial_tokens(y, TokenGenMode::ToCursor, self.cursor.x) {
+            for i in 0..curr_line_tokens.len() {
+                log::info!("curr_line_token[{}]: is_word={} position={} length={}", i, curr_line_tokens[i].is_word, curr_line_tokens[i].position, curr_line_tokens[i].length);
+            }
+            let idx = curr_line_tokens.len() - 1;
+            if curr_line_tokens[idx].is_word {
+                if curr_line_tokens.len() == 1 {
+                    // "|C...|"
+                    ///////////////////////////////////////////////////////
+                    // if current word-token is the first token in the line,
+                    // check the folded line case with loop
+                    let mut dec = 0;
+                    while y - dec >= 0 {
+                        dec += 1;
+                        //TODO
+                    }
+                    self.select_to_cursor_pos();
+                    return;
+                    ///////////////////////////////////////////////////////
+                }
+
+                if self.cursor.x != curr_line_tokens[idx].position {
+                    self.cursor.x = curr_line_tokens[idx].position;
+                    self.select_to_cursor_pos();
+                    return;
+                }
+
+                if curr_line_tokens.len() == 2 {
+                    // "|sC...|"
+                    if let Some(prev_line_tokens) = self.get_line_full_tokens(y - 1) { // if the prev line exists
+                        if prev_line_tokens.len() == 1 {
+                            if prev_line_tokens[0].is_word {
+                                // "|W|"
+                                // "|sC...|"
+                                self.cursor.y = (y - 1) as isize;
+                                self.cursor.x = 0;
+                                return self.vi_mode_backward_to_word_start();
+                            } else {
+                                // "|s|"
+                                // "|sC...|"
+                                // Special case: move to the start of the prev empty line
+                                self.cursor.y = (y - 1) as isize;
+                                self.cursor.x = 0;
+                                self.select_to_cursor_pos();
+                                return;
+                            }
+                        } else if prev_line_tokens.len() == 2 {
+                            if prev_line_tokens[1].is_word {
+                                // "|sW|"
+                                // "|sC...|"
+                                self.cursor.y = (y - 1) as isize;
+                                self.cursor.x = prev_line_tokens[1].position;
+                                self.select_to_cursor_pos();
+                                return;
+                            } else {
+                                // "|Ws|"
+                                // "|sC...|"
+                                self.cursor.y = (y - 1) as isize;
+                                self.cursor.x = 0;
+                                return self.vi_mode_backward_to_word_start();
+                            }
+                        } else if prev_line_tokens.len() >= 3 {
+                            if prev_line_tokens[prev_line_tokens.len() - 1].is_word {
+                                // "|...WsW|"
+                                // "|sC...|"
+                                self.cursor.y = (y - 1) as isize;
+                                self.cursor.x = prev_line_tokens[prev_line_tokens.len() - 1].position;
+                                self.select_to_cursor_pos();
+                                return;
+                            } else {
+                                // "|...sWs|"
+                                // "|sC...|"
+                                self.cursor.y = (y - 1) as isize;
+                                self.cursor.x = prev_line_tokens[prev_line_tokens.len() - 2].position;
+                                self.select_to_cursor_pos();
+                                return;
+                            }
+                        }
+                    }
+                } else if curr_line_tokens.len() == 3 {
+                    // "|WsC...|"
+                    self.cursor.x = curr_line_tokens[idx - 2].position;
+                    return self.vi_mode_backward_to_word_start();
+                } else if curr_line_tokens.len() >= 4 {
+                    // "|...sWsC...|"
+                    self.cursor.x = curr_line_tokens[idx - 2].position;
+                    self.select_to_cursor_pos();
+                    return;
+                }
+            } else {
+                if curr_line_tokens.len() == 1 {
+                    // "|c...|"
+                    if let Some(prev_line_tokens) = self.get_line_full_tokens(y - 1) { // if the prev line exists
+                        if prev_line_tokens.len() == 1 {
+                            if prev_line_tokens[0].is_word {
+                                // "|W|"
+                                // "|c...|"
+                                self.cursor.y = (y - 1) as isize;
+                                self.cursor.x = 0;
+                                return self.vi_mode_backward_to_word_start();
+                            } else {
+                                // "|s|"
+                                // "|c...|"
+                                // Special case: move to the start of the prev empty line
+                                self.cursor.y = (y - 1) as isize;
+                                self.cursor.x = 0;
+                                self.select_to_cursor_pos();
+                                return;
+                            }
+                        } else if prev_line_tokens.len() == 2 {
+                            if prev_line_tokens[1].is_word {
+                                // "|sW|"
+                                // "|c...|"
+                                self.cursor.y = (y - 1) as isize;
+                                self.cursor.x = prev_line_tokens[1].position;
+                                self.select_to_cursor_pos();
+                            } else {
+                                // "|Ws|"
+                                // "|c...|"
+                                self.cursor.y = (y - 1) as isize;
+                                self.cursor.x = 0;
+                                return self.vi_mode_backward_to_word_start();
+                            }
+                        } else if prev_line_tokens.len() >= 3 {
+                            if prev_line_tokens[prev_line_tokens.len() - 1].is_word {
+                                // "|...WsW|"
+                                // "|c...|"
+                                self.cursor.y = (y - 1) as isize;
+                                self.cursor.x = prev_line_tokens[prev_line_tokens.len() - 1].position;
+                                self.select_to_cursor_pos();
+                                return;
+                            } else {
+                                // "|...sWs|"
+                                // "|c...|"
+                                self.cursor.y = (y - 1) as isize;
+                                self.cursor.x = prev_line_tokens[prev_line_tokens.len() - 2].position;
+                                self.select_to_cursor_pos();
+                                return;
+                            }
+                        }
+                    }
+                } else if curr_line_tokens.len() == 2 {
+                    // "|Wc...|"
+                    self.cursor.x = curr_line_tokens[idx - 1].position;
+                    return self.vi_mode_backward_to_word_start();
+                } else if curr_line_tokens.len() >= 3 {
+                    // "|...sWc...|"
+                    self.cursor.x = curr_line_tokens[idx - 1].position;
+                    self.select_to_cursor_pos();
+                    return;
+                }
+            }
+        }
     }
 
     // mimic the behavior of vi "W" key
