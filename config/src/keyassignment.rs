@@ -634,6 +634,8 @@ pub enum CopyModeAssignment {
     MoveBlockStart,
     MoveBlockEnd,
     MoveForwardWordEnd,
+    ForwardNonWSWords,
+    BackwardNonWSWords,
     ViModeForwardToWordStart,
     ViModeBackwardToWordStart,
     MoveRight,
