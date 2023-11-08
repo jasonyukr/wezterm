@@ -1161,7 +1161,8 @@ impl CopyRenderable {
         let y = self.cursor.y as usize;
         if let Some(curr_line_tokens) = self.get_line_partial_tokens(y, TokenGenMode::FromCursor, self.cursor.x) {
             // for i in 0..curr_line_tokens.len() {
-            //     log::info!("curr_line_token[{}]: is_word={} position={} length={}", i, curr_line_tokens[i].is_word, curr_line_tokens[i].position, curr_line_tokens[i].length);
+            //     log::info!("curr_line_token[{}]: is_word={} position={} length={}",
+            //             i, curr_line_tokens[i].is_word, curr_line_tokens[i].position, curr_line_tokens[i].length);
             // }
             if curr_line_tokens[0].is_word {
                 if curr_line_tokens.len() == 1 {
@@ -1220,7 +1221,8 @@ impl CopyRenderable {
             // lookup next line
             if let Some(next_line_tokens) = self.get_line_full_tokens(y + 1) { // if the next line exists
                 // for i in 0..next_line_tokens.len() {
-                //     log::info!("next_line_token[{}]: is_word={} position={} length={}", i, next_line_tokens[i].is_word, next_line_tokens[i].position, next_line_tokens[i].length);
+                //     log::info!("next_line_token[{}]: is_word={} position={} length={}",
+                //             i, next_line_tokens[i].is_word, next_line_tokens[i].position, next_line_tokens[i].length);
                 // }
                 if next_line_tokens.len() == 1 && !next_line_tokens[0].is_word {
                     // Special case: move to the start of the next empty line
@@ -1283,7 +1285,8 @@ impl CopyRenderable {
         let y = self.cursor.y as usize;
         if let Some(curr_line_tokens) = self.get_line_partial_tokens(y, TokenGenMode::ToCursor, self.cursor.x) {
             // for i in 0..curr_line_tokens.len() {
-            //     log::info!("curr_line_token[{}]: is_word={} position={} length={}", i, curr_line_tokens[i].is_word, curr_line_tokens[i].position, curr_line_tokens[i].length);
+            //     log::info!("curr_line_token[{}]: is_word={} position={} length={}",
+            //             i, curr_line_tokens[i].is_word, curr_line_tokens[i].position, curr_line_tokens[i].length);
             // }
             let idx = curr_line_tokens.len() - 1;
             if curr_line_tokens[idx].is_word {
