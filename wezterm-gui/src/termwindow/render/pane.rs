@@ -275,14 +275,17 @@ impl crate::TermWindow {
                 item_type: UIItemType::BelowScrollThumb,
             });
 
+            let scrollbar_padding_left = 2;
+            let scrollbar_padding_top = 2;
+
             self.filled_rectangle(
                 layers,
                 2,
                 euclid::rect(
-                    thumb_x as f32,
-                    abs_thumb_top as f32,
-                    padding,
-                    thumb_size as f32,
+                    (thumb_x + scrollbar_padding_left) as f32,
+                    (abs_thumb_top + scrollbar_padding_top) as f32,
+                    padding - (scrollbar_padding_left * 2) as f32,
+                    (thumb_size - scrollbar_padding_top * 2) as f32,
                 ),
                 color,
             )
