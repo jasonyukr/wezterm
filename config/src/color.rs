@@ -153,6 +153,8 @@ pub struct Palette {
     /// The color of the "thumb" of the scrollbar; the segment that
     /// represents the current viewable area
     pub scrollbar_thumb: Option<RgbaColor>,
+    // The background color of scrollbar
+    pub scrollbar_bg: Option<RgbaColor>,
     /// The color of the split line between panes
     pub split: Option<RgbaColor>,
     /// The color of the visual bell. If unspecified, the foreground
@@ -208,6 +210,7 @@ impl Palette {
                 map
             },
             scrollbar_thumb: overlay!(scrollbar_thumb),
+            scrollbar_bg: overlay!(scrollbar_bg),
             split: overlay!(split),
             visual_bell: overlay!(visual_bell),
             compose_cursor: overlay!(compose_cursor),
@@ -239,6 +242,7 @@ impl From<ColorPalette> for Palette {
         apply_color!(selection_fg);
         apply_color!(selection_bg);
         apply_color!(scrollbar_thumb);
+        apply_color!(scrollbar_bg);
         apply_color!(split);
 
         let mut ansi = [RgbaColor::default(); 8];
@@ -279,6 +283,7 @@ impl From<Palette> for ColorPalette {
         apply_color!(selection_fg);
         apply_color!(selection_bg);
         apply_color!(scrollbar_thumb);
+        apply_color!(scrollbar_bg);
         apply_color!(split);
 
         if let Some(ansi) = cfg.ansi {
