@@ -1090,23 +1090,6 @@ impl CopyRenderable {
         return None;
     }
 
-    fn has_next_scrollback_row(&mut self) -> bool {
-        let dims = self.delegate.get_dimensions();
-        if self.cursor.y + 1 < dims.scrollback_rows as isize {
-            return true;
-        } else {
-            return false;
-        }
-    }
-
-    fn has_previous_scrollback_row(&mut self) -> bool {
-        if self.cursor.y - 1 >= 0 {
-            return true;
-        } else {
-            return false;
-        }
-    }
-
     fn get_line(&mut self, y: isize) -> Option<(isize, String)> {
         let dims = self.delegate.get_dimensions();
         if y < 0 {
@@ -1131,13 +1114,17 @@ impl CopyRenderable {
     }
 
     fn has_folded_block_head(&mut self) -> bool {
-        if !self.has_previous_scrollback_row() {
+        if self.cursor.y - 1 < 0 {
+            // top of the buffer reached
             return false;
         }
         let y = self.cursor.y;
         let dims = self.delegate.get_dimensions();
-        let (_top, lines) = self.delegate.get_lines(y - 1..y);
+
+        let (top, lines) = self.delegate.get_lines(y - 1..y);
         if let Some(line) = lines.get(0) {
+            self.cursor.y = top + 1; // adjust by top
+
             let s = line.columns_as_str(0..dims.cols);
             if let Some(ch) = s.chars().nth(dims.cols - 1) {
                 if !ch.is_whitespace()  {
@@ -1149,13 +1136,17 @@ impl CopyRenderable {
     }
 
     fn has_folded_block_tail(&mut self) -> bool {
-        if !self.has_next_scrollback_row() {
+        let dims = self.delegate.get_dimensions();
+        if self.cursor.y + 1 >= dims.scrollback_top + (dims.scrollback_rows as isize) {
+            // bottom of the buffer reached
             return false;
         }
         let y = self.cursor.y;
-        let dims = self.delegate.get_dimensions();
-        let (_, lines) = self.delegate.get_lines(y + 1..y + 2);
+
+        let (top, lines) = self.delegate.get_lines(y + 1..y + 2);
         if let Some(line) = lines.get(0) {
+            self.cursor.y = top - 1; // adjust by top
+
             let s = line.columns_as_str(0..dims.cols);
             if let Some(ch) = s.chars().nth(0) {
                 if !ch.is_whitespace()  {
@@ -1168,9 +1159,11 @@ impl CopyRenderable {
 
     fn move_to_start_of_block(&mut self) {
         let y = self.cursor.y;
+
         let (top, lines) = self.delegate.get_lines(y..y + 1);
         if let Some(line) = lines.get(0) {
-            self.cursor.y = top;
+            self.cursor.y = top; // adjust by top
+
             if let Some (cursor_ch) = line.columns_as_str(self.cursor.x..self.cursor.x + 1).chars().nth(0) {
                 let s = line.columns_as_str(0..self.cursor.x);
                 let dims = self.delegate.get_dimensions();
@@ -1203,9 +1196,11 @@ impl CopyRenderable {
 
     fn move_to_end_of_block(&mut self) {
         let y = self.cursor.y;
+
         let (top, lines) = self.delegate.get_lines(y..y + 1);
         if let Some(line) = lines.get(0) {
-            self.cursor.y = top;
+            self.cursor.y = top; // adjust by top
+
             let width = line.len();
             if let Some (cursor_ch) = line.columns_as_str(self.cursor.x..self.cursor.x + 1).chars().nth(0) {
                 let s = line.columns_as_str(self.cursor.x + 1..width + 1);
