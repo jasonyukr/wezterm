@@ -821,7 +821,8 @@ impl CopyRenderable {
     }
 
     fn move_backward_one_word(&mut self) {
-        let y = if self.cursor.x == 0 && self.cursor.y > 0 {
+        let dims = self.delegate.get_dimensions();
+        let y = if self.cursor.x == 0 && self.cursor.y > dims.scrollback_top {
             self.cursor.x = usize::max_value();
             self.cursor.y.saturating_sub(1)
         } else {
@@ -865,7 +866,7 @@ impl CopyRenderable {
                 break;
             }
 
-            if last_was_whitespace && self.cursor.y > 0 {
+            if last_was_whitespace && self.cursor.y > dims.scrollback_top {
                 // The line begins with whitespace
                 self.cursor.x = usize::max_value();
                 self.cursor.y -= 1;
