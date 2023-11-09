@@ -275,8 +275,6 @@ impl crate::TermWindow {
                 item_type: UIItemType::BelowScrollThumb,
             });
 
-            let scrollbar_outer_padding_right = 3;
-            let scrollbar_outer_padding_top = 3;
             let scrollbar_inner_padding_left = 1;
             let scrollbar_inner_padding_top = 1;
 
@@ -285,9 +283,9 @@ impl crate::TermWindow {
                 2,
                 euclid::rect(
                     thumb_x as f32,
-                    scrollbar_outer_padding_top as f32,
-                    padding - scrollbar_outer_padding_right as f32,
-                    (self.dimensions.pixel_height - scrollbar_outer_padding_top * 2) as f32,
+                    thumb_y_offset as f32,
+                    padding as f32,
+                    info.height as f32,
                 ),
                 palette.scrollbar_bg.to_linear(),
             )
@@ -298,9 +296,9 @@ impl crate::TermWindow {
                 2,
                 euclid::rect(
                     (thumb_x + scrollbar_inner_padding_left) as f32,
-                    (abs_thumb_top + scrollbar_outer_padding_top + scrollbar_inner_padding_top) as f32,
-                    padding - (scrollbar_outer_padding_right + scrollbar_inner_padding_left * 2) as f32,
-                    (thumb_size - scrollbar_outer_padding_top * 2 - scrollbar_inner_padding_top * 2) as f32,
+                    (abs_thumb_top + scrollbar_inner_padding_top) as f32,
+                    padding - (scrollbar_inner_padding_left * 2) as f32,
+                    (thumb_size - scrollbar_inner_padding_top * 2) as f32,
                 ),
                 color,
             )
