@@ -1845,10 +1845,11 @@ impl CopyRenderable {
     }
 
     fn backward_to_possible_folded_line(&mut self) {
+        let mut dec = 1;
         while self.cursor.x == 0 {
             let prev_tokens;
-            if let Some((top, prev_line)) = self.get_line(self.cursor.y - 1) {
-                self.cursor.y = top + 1; // adjust by top
+            if let Some((top, prev_line)) = self.get_line(self.cursor.y - dec) {
+                self.cursor.y = top + dec; // adjust by top
 
                 prev_tokens = Self::collect_merged_tokens(&prev_line, 0);
             } else {
@@ -1858,20 +1859,34 @@ impl CopyRenderable {
             let prev_tokens_len = prev_tokens.len();
             if prev_tokens_len == 1 {
                 if !prev_tokens[0].is_ws {
-                    self.cursor.y -= 1;
+                    // "|W|"   <--
+                    // "|C...|"
+                    dec += 1;
                     self.cursor.x = 0;
                     continue;
                 } else {
+                    // "|s|"  <--
+                    // "|W|"
+                    // "|C...|"
+                    dec -= 1;
                     break;
                 }
             } else if prev_tokens_len > 1 {
                 if !prev_tokens[prev_tokens_len - 1].is_ws {
-                    self.cursor.y -= 1;
+                    // "|...W|"  "|...W|" <--
+                    // "|W|"     "|C...|"
+                    // "|C...|"
                     self.cursor.x = prev_tokens[prev_tokens_len - 1].position;
+                } else {
+                    // "|...s|"  <--
+                    // "|W|"
+                    // "|C...|"
+                    dec -= 1;
                 }
                 break;
             }
         }
+        self.cursor.y -= dec;
         self.select_to_cursor_pos();
     }
 
@@ -1905,8 +1920,8 @@ impl CopyRenderable {
 
             prev_tokens = Self::collect_merged_tokens(&prev_line, 0);
 
-            // log::info!("backward #2 : cursor.x={} cursor.y={} next-token-len={} next_line=|{}|",
-            //            self.cursor.x, self.cursor.y, next_tokens.len(), next_line);
+            // log::info!("backward #2 : cursor.x={} cursor.y={} prev-token-len={} prev_line=|{}|",
+            //            self.cursor.x, self.cursor.y, prev_tokens.len(), prev_line);
             // for i in (0..prev_tokens.len()) {
             //     log::info!(" prev_tokens[{}]: is_ws={} position={} length={}",
             //                i, prev_tokens[i].is_ws, prev_tokens[i].position, prev_tokens[i].length);
@@ -1934,7 +1949,7 @@ impl CopyRenderable {
                         // Folded word case
                         // "|...W|"
                         // "|C"
-                        self.cursor.x = 0; // actually redundant
+                        self.cursor.x = 0;  // for the loop inside backward_to_possible_folded_line()
                         return self.backward_to_possible_folded_line();
                     } else {
                         if prev_tokens.len() == 1 {
@@ -1984,7 +1999,7 @@ impl CopyRenderable {
                     // Move to the start of the current word
                     self.cursor.x = curr_tokens[curr_tokens_len - 1].position;
                 } else { // "|sC", "|WsC", "|...sWsC" case
-                    if let Some(idx) = Self::rfind_first_non_whitespace_token(&curr_tokens, curr_tokens_len - 2) {
+                    if let Some(idx) = Self::rfind_first_non_whitespace_token(&curr_tokens, curr_tokens_len - 1) {
                         // Move to the start of the last word
                         self.cursor.x = curr_tokens[idx].position;
                         if self.cursor.x == 0 {
@@ -2097,7 +2112,7 @@ impl CopyRenderable {
                     // Move to the start of the current word
                     self.cursor.x = curr_tokens[curr_tokens_len - 1].position;
                 } else { // "|sc", "|Wsc", "|...Wsc" case
-                    if let Some(idx) = Self::rfind_first_non_whitespace_token(&curr_tokens, curr_tokens_len - 2) {
+                    if let Some(idx) = Self::rfind_first_non_whitespace_token(&curr_tokens, curr_tokens_len - 1) {
                         // Move to the start of the last word
                         self.cursor.x = curr_tokens[idx].position;
                         if self.cursor.x == 0 {
