@@ -1092,15 +1092,17 @@ impl CopyRenderable {
         return None;
     }
 */
+
     fn get_line(&mut self, y: isize) -> Option<(isize, String)> {
         let dims = self.delegate.get_dimensions();
-        if y < 0 {
-            // top of the buffer reached
-            return None;
-        }
 
         // log::info!("get_line: y={} viewport_rows={} scrollback_rows={} scrollback_top={}",
         //            y, dims.viewport_rows, dims.scrollback_rows, dims.scrollback_top);
+
+        if y < dims.scrollback_top as isize {
+            // top of the buffer reached
+            return None;
+        }
 
         if y >= dims.scrollback_top + (dims.scrollback_rows as isize) {
             // bottom of the buffer reached
@@ -1116,12 +1118,12 @@ impl CopyRenderable {
     }
 
     fn has_folded_block_head(&mut self) -> bool {
-        if self.cursor.y - 1 < 0 {
+        let dims = self.delegate.get_dimensions();
+        if self.cursor.y - 1 < dims.scrollback_top as isize {
             // top of the buffer reached
             return false;
         }
         let y = self.cursor.y;
-        let dims = self.delegate.get_dimensions();
 
         let (top, lines) = self.delegate.get_lines(y - 1..y);
         if let Some(line) = lines.get(0) {
@@ -1526,7 +1528,7 @@ impl CopyRenderable {
 
             // log::info!("forward #1 : cursor.x={} cursor.y={} cursor_char=|{}| curr-token-len={} curr_line=|{}|",
             //            self.cursor.x, self.cursor.y, cursor_char, curr_tokens.len(), curr_line);
-            // for i in (0..curr_tokens.len()) {
+            // for i in 0..curr_tokens.len() {
             //     log::info!(" curr_tokens[{}]: is_ws={} position={} length={}",
             //                i, curr_tokens[i].is_ws, curr_tokens[i].position, curr_tokens[i].length);
             // }
@@ -1542,7 +1544,7 @@ impl CopyRenderable {
 
             // log::info!("forward #2 : cursor.x={} cursor.y={} next-token-len={} next_line=|{}|",
             //            self.cursor.x, self.cursor.y, next_tokens.len(), next_line);
-            // for i in (0..next_tokens.len()) {
+            // for i in 0..next_tokens.len() {
             //     log::info!(" next_tokens[{}]: is_ws={} position={} length={}",
             //                i, next_tokens[i].is_ws, next_tokens[i].position, next_tokens[i].length);
             // }
@@ -1760,7 +1762,7 @@ impl CopyRenderable {
             // log::info!("forward-possible: cursor.x={} cursor.y={} next-token-len={} next_line=|{}|",
             //            self.cursor.x, self.cursor.y,
             //            next_tokens.len(), next_line);
-            // for i in (0..next_tokens.len()) {
+            // for i in 0..next_tokens.len() {
             //     log::info!(" next_tokens[{}]: is_ws={} position={} length={}", i,
             //                next_tokens[i].is_ws, 
             //                next_tokens[i].position,
@@ -1910,7 +1912,7 @@ impl CopyRenderable {
 
             // log::info!("backward #1 : cursor.x={} cursor.y={} cursor_char=|{}| curr-token-len={} curr_line=|{}|",
             //            self.cursor.x, self.cursor.y, cursor_char, curr_tokens.len(), curr_line);
-            // for i in (0..curr_tokens.len()) {
+            // for i in 0..curr_tokens.len() {
             //     log::info!(" curr_tokens[{}]: is_ws={} position={} length={}",
             //                i, curr_tokens[i].is_ws, curr_tokens[i].position, curr_tokens[i].length);
             // }
@@ -1926,7 +1928,7 @@ impl CopyRenderable {
 
             // log::info!("backward #2 : cursor.x={} cursor.y={} prev-token-len={} prev_line=|{}|",
             //            self.cursor.x, self.cursor.y, prev_tokens.len(), prev_line);
-            // for i in (0..prev_tokens.len()) {
+            // for i in 0..prev_tokens.len() {
             //     log::info!(" prev_tokens[{}]: is_ws={} position={} length={}",
             //                i, prev_tokens[i].is_ws, prev_tokens[i].position, prev_tokens[i].length);
             // }
