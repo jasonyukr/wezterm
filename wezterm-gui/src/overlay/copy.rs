@@ -112,6 +112,7 @@ struct WordToken {
     length: usize,
 }
 
+/*
 struct Token {
     is_word: bool,
     position: usize,
@@ -123,6 +124,7 @@ enum TokenGenMode {
     FromCursor,
     ToCursor,
 }
+*/
 
 impl CopyOverlay {
     pub fn with_pane(
@@ -1030,7 +1032,7 @@ impl CopyRenderable {
         array
     }
 
-
+/*
     fn get_line_full_tokens(&mut self, y: usize) -> Option<Vec<Token>> {
         return self.get_line_partial_tokens(y, TokenGenMode::All, 0);
     }
@@ -1089,7 +1091,7 @@ impl CopyRenderable {
         }
         return None;
     }
-
+*/
     fn get_line(&mut self, y: isize) -> Option<(isize, String)> {
         let dims = self.delegate.get_dimensions();
         if y < 0 {
@@ -1237,6 +1239,12 @@ impl CopyRenderable {
         self.select_to_cursor_pos();
     }
 
+    fn vi_mode_forward_to_word_start(&mut self) {
+    }
+    fn vi_mode_backward_to_word_start(&mut self, jump_done: bool) {
+    }
+
+/*
     // mimic the behavior of vi "W" key
     fn vi_mode_forward_to_word_start(&mut self) {
         let dims = self.delegate.get_dimensions();
@@ -1502,6 +1510,7 @@ impl CopyRenderable {
             }
         }
     }
+*/
 
     // mimic the behavior of vi "W" key
     fn forward_non_whitespace_words(&mut self) {
