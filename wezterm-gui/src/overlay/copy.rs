@@ -1090,15 +1090,6 @@ impl CopyRenderable {
         return None;
     }
 
-    fn get_matched_token(array: &Vec<Token>, x: usize) -> Option<usize> {
-        for i in 0..array.len() {
-            if x >= array[i].position && x < array[i].position + array[i].length {
-                return Some(i);
-            }
-        }
-        return None;
-    }
-
     fn has_next_scrollback_row(&mut self) -> bool {
         let dims = self.delegate.get_dimensions();
         if self.cursor.y + 1 < dims.scrollback_rows as isize {
@@ -1519,9 +1510,9 @@ impl CopyRenderable {
 
     // mimic the behavior of vi "W" key
     fn forward_non_whitespace_words(&mut self) {
-        let mut cursor_char;
-        let mut curr_tokens;
-        let mut next_tokens;
+        let cursor_char;
+        let curr_tokens;
+        let next_tokens;
 
         if let Some((top, curr_line)) = self.get_line(self.cursor.y) {
             self.cursor.y = top; // adjust by top
@@ -1855,7 +1846,7 @@ impl CopyRenderable {
 
     fn backward_to_possible_folded_line(&mut self) {
         while self.cursor.x == 0 {
-            let mut prev_tokens;
+            let prev_tokens;
             if let Some((top, prev_line)) = self.get_line(self.cursor.y - 1) {
                 self.cursor.y = top + 1; // adjust by top
 
@@ -1888,9 +1879,9 @@ impl CopyRenderable {
     fn backward_non_whitespace_words(&mut self) {
         let dims = self.delegate.get_dimensions();
 
-        let mut cursor_char;
-        let mut curr_tokens;
-        let mut prev_tokens;
+        let cursor_char;
+        let curr_tokens;
+        let prev_tokens;
 
         if let Some((top, curr_line)) = self.get_line(self.cursor.y) {
             self.cursor.y = top; // adjust by top
