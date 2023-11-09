@@ -1139,48 +1139,6 @@ impl CopyRenderable {
         return None;
     }
 
-    fn get_current_line(&mut self) -> (isize, String) {
-        let y = self.cursor.y;
-        if y < 0 {
-            return (-1, "".to_string());
-        }
-        let dims = self.delegate.get_dimensions();
-        let (top, lines) = self.delegate.get_lines(y..y + 1);
-        if let Some(ln) = lines.get(0) {
-            let line = Self::guarantee_line_length(&ln.columns_as_str(0..dims.cols), dims.cols);
-            return (top, line);
-        }
-        return (-1, "".to_string());
-    }
-
-    fn get_previous_line(&mut self) -> (isize, String) {
-        let y = self.cursor.y;
-        if y - 1 < 0 {
-            return (-1, "".to_string());
-        }
-        let dims = self.delegate.get_dimensions();
-        let (top, lines) = self.delegate.get_lines(y - 1..y);
-        if let Some(ln) = lines.get(0) {
-            let line = Self::guarantee_line_length(&ln.columns_as_str(0..dims.cols), dims.cols);
-            return (top, line);
-        }
-        return (-1, "".to_string());
-    }
-
-    fn get_next_line(&mut self) -> (isize, String) {
-        let dims = self.delegate.get_dimensions();
-        let y = self.cursor.y;
-        if y + 1 >= dims.scrollback_rows as isize {
-            return (-1, "".to_string());
-        }
-        let (top, lines) = self.delegate.get_lines(y + 1..y + 2);
-        if let Some(ln) = lines.get(0) {
-            let line = Self::guarantee_line_length(&ln.columns_as_str(0..dims.cols), dims.cols);
-            return (top, line);
-        }
-        return (-1, "".to_string());
-    }
-
     fn has_folded_block_head(&mut self) -> bool {
         if !self.has_previous_scrollback_row() {
             return false;
@@ -1798,7 +1756,7 @@ impl CopyRenderable {
         let old_x = self.cursor.x;
         let mut line_count = 0; // the effect of "old_y = self.cursor.y"
 
-        let mut next_tokens = Self::collect_merged_tokens("", 0);
+        let mut next_tokens;
         if let Some((top, next_line)) = self.get_line(self.cursor.y + 1) {
             self.cursor.y = top - 1; // adjust by top
 
@@ -1895,17 +1853,19 @@ impl CopyRenderable {
         self.select_to_cursor_pos();
     }
 
-    fn backward_to_possible_previous_line(&mut self) {
+    fn backward_to_possible_folded_line(&mut self) {
         while self.cursor.x == 0 {
-            let (prev_top, prev_line) = self.get_previous_line();
-            if prev_top == -1 {
+            let mut prev_tokens;
+            if let Some((top, prev_line)) = self.get_line(self.cursor.y - 1) {
+                self.cursor.y = top + 1; // adjust by top
+
+                prev_tokens = Self::collect_merged_tokens(&prev_line, 0);
+            } else {
                 break;
             }
-            let prev_tokens = Self::collect_merged_tokens(&prev_line, 0);
-            let token_len = prev_tokens.len();
-            if token_len == 0 {
-                // NOT possible
-            } else if token_len == 1 {
+
+            let prev_tokens_len = prev_tokens.len();
+            if prev_tokens_len == 1 {
                 if !prev_tokens[0].is_ws {
                     self.cursor.y -= 1;
                     self.cursor.x = 0;
@@ -1913,10 +1873,10 @@ impl CopyRenderable {
                 } else {
                     break;
                 }
-            } else {
-                if !prev_tokens[token_len - 1].is_ws {
+            } else if prev_tokens_len > 1 {
+                if !prev_tokens[prev_tokens_len - 1].is_ws {
                     self.cursor.y -= 1;
-                    self.cursor.x = prev_tokens[token_len - 1].position;
+                    self.cursor.x = prev_tokens[prev_tokens_len - 1].position;
                 }
                 break;
             }
@@ -1928,27 +1888,42 @@ impl CopyRenderable {
     fn backward_non_whitespace_words(&mut self) {
         let dims = self.delegate.get_dimensions();
 
-        let (curr_top, curr_line) = self.get_current_line();
-        let (prev_top, prev_line) = self.get_previous_line();
+        let mut cursor_char;
+        let mut curr_tokens;
+        let mut prev_tokens;
 
-        if curr_top == -1 {
-            // logically not possible case
+        if let Some((top, curr_line)) = self.get_line(self.cursor.y) {
+            self.cursor.y = top; // adjust by top
+
+            cursor_char = curr_line.chars().nth(self.cursor.x).unwrap();
+            curr_tokens = Self::collect_merged_tokens(&curr_line[0..self.cursor.x], 0);
+
+            // log::info!("backward #1 : cursor.x={} cursor.y={} cursor_char=|{}| curr-token-len={} curr_line=|{}|",
+            //            self.cursor.x, self.cursor.y, cursor_char, curr_tokens.len(), curr_line);
+            // for i in (0..curr_tokens.len()) {
+            //     log::info!(" curr_tokens[{}]: is_ws={} position={} length={}",
+            //                i, curr_tokens[i].is_ws, curr_tokens[i].position, curr_tokens[i].length);
+            // }
         } else {
-            self.cursor.y = curr_top;
+            // current line doesn't exist.
+            // This case is logically not possible.
+            return;
         }
+        if let Some((top, prev_line)) = self.get_line(self.cursor.y - 1) {
+            self.cursor.y = top + 1; // adjust by top
 
-        let cursor_char = curr_line.chars().nth(self.cursor.x).unwrap();
+            prev_tokens = Self::collect_merged_tokens(&prev_line, 0);
 
-        let curr_tokens = Self::collect_merged_tokens(&curr_line[0..self.cursor.x], 0);
-        let prev_tokens = Self::collect_merged_tokens(&prev_line, 0);
-
-        // log::info!("backward_non_whitespace_words: cursor_char=|{}| token-len={} curr_line=|{}|", cursor_char, curr_tokens.len(), curr_line);
-        // for i in (0..curr_tokens.len()) {
-        //     log::info!(" token[{}]: is_ws={} position={} length={}", i,
-        //                curr_tokens[i].is_ws, 
-        //                curr_tokens[i].position,
-        //                curr_tokens[i].length);
-        // }
+            // log::info!("backward #2 : cursor.x={} cursor.y={} next-token-len={} next_line=|{}|",
+            //            self.cursor.x, self.cursor.y, next_tokens.len(), next_line);
+            // for i in (0..prev_tokens.len()) {
+            //     log::info!(" prev_tokens[{}]: is_ws={} position={} length={}",
+            //                i, prev_tokens[i].is_ws, prev_tokens[i].position, prev_tokens[i].length);
+            // }
+        } else {
+            // assign zero length array if the next line doesn't exist
+            prev_tokens = Self::collect_merged_tokens("", 0);
+        }
 
         /*
            Word tokens
@@ -1961,15 +1936,15 @@ impl CopyRenderable {
            '...' : any possible tokens
          */
         if !cursor_char.is_ascii_whitespace() { // if the cursor position character is non-whitespace
-            let token_len = curr_tokens.len();
-            if token_len == 0 { // "|C" case
-                if prev_top != -1 {
+            let curr_tokens_len = curr_tokens.len();
+            if curr_tokens_len == 0 { // "|C" case
+                if prev_tokens.len() != 0 {
                     if !prev_tokens[prev_tokens.len() - 1].is_ws {
                         // Folded word case
                         // "|...W|"
                         // "|C"
                         self.cursor.x = 0; // actually redundant
-                        return self.backward_to_possible_previous_line();
+                        return self.backward_to_possible_folded_line();
                     } else {
                         if prev_tokens.len() == 1 {
                             // Special case: move to the start of the previous empty line
@@ -1988,19 +1963,19 @@ impl CopyRenderable {
                     }
                 } else {
                     // Previous line doesn't exist: Just stay
-                    // "____"
+                    // "----"
                     // "|C"
                 }
             } else {
-                if !curr_tokens[token_len - 1].is_ws { // "|WC", "|sWC", "|...sWC" case
-                    if token_len == 1 { // "|WC" case
-                        if prev_top != -1 {
+                if !curr_tokens[curr_tokens_len - 1].is_ws { // "|WC", "|sWC", "|...sWC" case
+                    if curr_tokens_len == 1 { // "|WC" case
+                        if prev_tokens.len() != 0 {
                             if !prev_tokens[prev_tokens.len() - 1].is_ws {
                                 // Folded word case
                                 // "|...W|"
                                 // "|WC"
                                 self.cursor.x = 0;
-                                return self.backward_to_possible_previous_line();
+                                return self.backward_to_possible_folded_line();
                             } else {
                                 // Fall through: update self.cursor.x
                                 // "|...s|"
@@ -2016,18 +1991,18 @@ impl CopyRenderable {
                         // "|sWC", "|...sWC" case
                     }
                     // Move to the start of the current word
-                    self.cursor.x = curr_tokens[token_len - 1].position;
+                    self.cursor.x = curr_tokens[curr_tokens_len - 1].position;
                 } else { // "|sC", "|WsC", "|...sWsC" case
-                    if let Some(idx) = Self::rfind_first_non_whitespace_token(&curr_tokens, token_len - 2) {
+                    if let Some(idx) = Self::rfind_first_non_whitespace_token(&curr_tokens, curr_tokens_len - 2) {
                         // Move to the start of the last word
                         self.cursor.x = curr_tokens[idx].position;
                         if self.cursor.x == 0 {
                             // "|WsC" case
-                            if prev_top != -1 {
+                            if prev_tokens.len() != 0 {
                                 if !prev_tokens[prev_tokens.len() - 1].is_ws {
                                     // "|...W|"
                                     // "|WsC"
-                                    return self.backward_to_possible_previous_line();
+                                    return self.backward_to_possible_folded_line();
                                 } else {
                                     // Do nothing: self.cursor.x already updated
                                     // "|...s|"
@@ -2044,7 +2019,7 @@ impl CopyRenderable {
                         }
                     } else {
                         // "|sC" case
-                        if prev_top != -1 {
+                        if prev_tokens.len() != 0 {
                             if prev_tokens.len() == 1 && prev_tokens[0].is_ws {
                                 // Special case: move to the start of the previous empty line
                                 // "|s|"
@@ -2073,9 +2048,9 @@ impl CopyRenderable {
                 }
             }
         } else { // if the cursor position character is whitespace
-            let token_len = curr_tokens.len();
-            if token_len == 0 { // "|c" case
-                if prev_top != -1 {
+            let curr_tokens_len = curr_tokens.len();
+            if curr_tokens_len == 0 { // "|c" case
+                if prev_tokens.len() != 0 {
                     if !prev_tokens[prev_tokens.len() - 1].is_ws {
                         // Continue to search the last word in the previous line
                         // "|...W|"
@@ -2105,15 +2080,15 @@ impl CopyRenderable {
                     // "|c"
                 }
             } else {
-                if !curr_tokens[token_len - 1].is_ws { // "|Wc", "|sWc", "|...sWc" case
-                    if token_len == 1 { // "|Wc" case
-                        if prev_top != -1 {
+                if !curr_tokens[curr_tokens_len - 1].is_ws { // "|Wc", "|sWc", "|...sWc" case
+                    if curr_tokens_len == 1 { // "|Wc" case
+                        if prev_tokens.len() != 0 {
                             if !prev_tokens[prev_tokens.len() - 1].is_ws {
                                 // Folded word case
                                 // "|...W|"
                                 // "|Wc"
                                 self.cursor.x = 0;
-                                return self.backward_to_possible_previous_line();
+                                return self.backward_to_possible_folded_line();
                             } else {
                                 // Fall through: update self.cursor.x
                                 // "|...s|"
@@ -2129,18 +2104,18 @@ impl CopyRenderable {
                         // "|sWc", "|...sWc" case
                     }
                     // Move to the start of the current word
-                    self.cursor.x = curr_tokens[token_len - 1].position;
+                    self.cursor.x = curr_tokens[curr_tokens_len - 1].position;
                 } else { // "|sc", "|Wsc", "|...Wsc" case
-                    if let Some(idx) = Self::rfind_first_non_whitespace_token(&curr_tokens, token_len - 2) {
+                    if let Some(idx) = Self::rfind_first_non_whitespace_token(&curr_tokens, curr_tokens_len - 2) {
                         // Move to the start of the last word
                         self.cursor.x = curr_tokens[idx].position;
                         if self.cursor.x == 0 {
                             // "|Wsc" case
-                            if prev_top != -1 {
+                            if prev_tokens.len() != 0 {
                                 if !prev_tokens[prev_tokens.len() - 1].is_ws {
                                     // "|...W|"
                                     // "|Wsc"
-                                    return self.backward_to_possible_previous_line();
+                                    return self.backward_to_possible_folded_line();
                                 } else {
                                     // Do nothing: self.cursor.x already updated
                                     // "|...s|"
@@ -2157,7 +2132,7 @@ impl CopyRenderable {
                         }
                     } else {
                         // "|sc" case
-                        if prev_top != -1 {
+                        if prev_tokens.len() != 0 {
                             if prev_tokens.len() == 1 && prev_tokens[0].is_ws {
                                 // Special case: move to the start of the previous empty line
                                 // "|s|"
