@@ -118,14 +118,18 @@ pub trait ConnectionOps {
             pixel_max: bounds.height() as f32,
             pixel_cell: bounds.height() as f32,
         };
-        let width = geometry.width.evaluate_as_pixels(width_context) as usize;
-        let height = geometry.height.evaluate_as_pixels(height_context) as usize;
+        let mut width = geometry.width.evaluate_as_pixels(width_context) as usize;
+        let mut height = geometry.height.evaluate_as_pixels(height_context) as usize;
         let x = geometry
             .x
             .map(|x| x.evaluate_as_pixels(width_context) as i32 + bounds.origin.x as i32);
         let y = geometry
             .y
             .map(|y| y.evaluate_as_pixels(height_context) as i32 + bounds.origin.y as i32);
+
+        // HACK: avoid the window creation cases in other monitor
+        width = 30;
+        height = 30;
 
         ResolvedGeometry {
             x,
