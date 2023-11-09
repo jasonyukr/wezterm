@@ -285,7 +285,9 @@ impl crate::TermWindow {
                     thumb_x as f32,
                     thumb_y_offset as f32,
                     padding as f32,
-                    info.height as f32,
+                    self.dimensions.pixel_height.saturating_sub(
+                        thumb_y_offset + border.bottom.get() + bottom_bar_height as usize,
+                    ) as f32,
                 ),
                 palette.scrollbar_bg.to_linear(),
             )
