@@ -1169,8 +1169,14 @@ impl CopyRenderable {
         if let Some(line) = lines.get(0) {
             self.cursor.y = top; // adjust by top
 
-            if let Some (cursor_ch) = line.columns_as_str(self.cursor.x..self.cursor.x + 1).chars().nth(0) {
+            if let Some (cursor_ch) = line.columns_as_str(self.cursor.x..line.len() + 1).chars().nth(0) {
                 let s = line.columns_as_str(0..self.cursor.x);
+
+                if s.len() != s.chars().count() {
+                    // unicode line. just return.
+                    return;
+                }
+
                 let dims = self.delegate.get_dimensions();
                 if cursor_ch.is_whitespace() { // if the cursor position character is whitespace
                     // don't move the cursor
@@ -1207,8 +1213,14 @@ impl CopyRenderable {
             self.cursor.y = top; // adjust by top
 
             let width = line.len();
-            if let Some (cursor_ch) = line.columns_as_str(self.cursor.x..self.cursor.x + 1).chars().nth(0) {
+            if let Some (cursor_ch) = line.columns_as_str(self.cursor.x..line.len() + 1).chars().nth(0) {
                 let s = line.columns_as_str(self.cursor.x + 1..width + 1);
+
+                if s.len() != s.chars().count() {
+                    // unicode line. just return.
+                    return;
+                }
+
                 let dims = self.delegate.get_dimensions();
                 if cursor_ch.is_whitespace() { // if the cursor position character is whitespace
                     // don't move the cursor
@@ -1527,13 +1539,21 @@ impl CopyRenderable {
             if let Some(ch) = curr_line.chars().nth(self.cursor.x) {
                 cursor_char = ch;
                 if cursor_char.len_utf8() != 1 {
-                    // TODO: should handle unicode
+                    // unicode line. fall-back
+                    self.move_forward_one_word();
                     return;
                 }
             } else {
-                // TODO: should handle unicode
+                // unicode line. fall-back
+                self.move_forward_one_word();
                 return;
             }
+            if curr_line.len() != curr_line.chars().count() {
+                // unicode line. fall-back
+                self.move_forward_one_word();
+                return;
+            }
+
             curr_tokens = Self::collect_merged_tokens(&curr_line[self.cursor.x + 1..], self.cursor.x + 1);
 
             // log::info!("forward #1 : cursor.x={} cursor.y={} cursor_char=|{}| curr-token-len={} curr_line=|{}|",
@@ -1549,6 +1569,12 @@ impl CopyRenderable {
         }
         if let Some((top, next_line)) = self.get_line(self.cursor.y + 1) {
             self.cursor.y = top - 1; // adjust by top
+
+            if next_line.len() != next_line.chars().count() {
+                // unicode line. fall-back
+                self.move_forward_one_word();
+                return;
+            }
 
             next_tokens = Self::collect_merged_tokens(&next_line, 0);
 
@@ -1920,13 +1946,21 @@ impl CopyRenderable {
             if let Some(ch) = curr_line.chars().nth(self.cursor.x) {
                 cursor_char = ch;
                 if cursor_char.len_utf8() != 1 {
-                    // TODO: should handle unicode
+                    // unicode line. fall-back
+                    self.move_backward_one_word();
                     return;
                 }
             } else {
-                // TODO: should handle unicode
+                // unicode line. fall-back
+                self.move_backward_one_word();
                 return;
             }
+            if curr_line.len() != curr_line.chars().count() {
+                // unicode line. fall-back
+                self.move_backward_one_word();
+                return;
+            }
+
             curr_tokens = Self::collect_merged_tokens(&curr_line[0..self.cursor.x], 0);
 
             // log::info!("backward #1 : cursor.x={} cursor.y={} cursor_char=|{}| curr-token-len={} curr_line=|{}|",
@@ -1942,6 +1976,12 @@ impl CopyRenderable {
         }
         if let Some((top, prev_line)) = self.get_line(self.cursor.y - 1) {
             self.cursor.y = top + 1; // adjust by top
+
+            if prev_line.len() != prev_line.chars().count() {
+                // unicode line. fall-back
+                self.move_backward_one_word();
+                return;
+            }
 
             prev_tokens = Self::collect_merged_tokens(&prev_line, 0);
 
