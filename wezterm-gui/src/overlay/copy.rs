@@ -1450,6 +1450,14 @@ impl CopyRenderable {
         if let Some((top, next_line)) = self.get_line(self.cursor.y + 1) {
             self.cursor.y = top - 1; // adjust by top
 
+            if next_line.len() != next_line.chars().count() {
+                // unicode line. just return in old location
+                self.cursor.x = old_x;
+                self.cursor.y -= line_count;
+                self.select_to_cursor_pos();
+                return;
+            }
+
             next_tokens = Self::collect_merged_tokens(&next_line, 0);
 
             // log::info!("forward-possible: cursor.x={} cursor.y={} next-token-len={} next_line=|{}|",
@@ -1476,6 +1484,14 @@ impl CopyRenderable {
                 if let Some((top, next_line)) = self.get_line(self.cursor.y + 1) {
                     self.cursor.y = top - 1; // adjust by top
 
+                    if next_line.len() != next_line.chars().count() {
+                        // unicode line. just return in old location
+                        self.cursor.x = old_x;
+                        self.cursor.y -= line_count;
+                        self.select_to_cursor_pos();
+                        return;
+                    }
+
                     next_tokens = Self::collect_merged_tokens(&next_line, 0);
                     next_tokens_len = next_tokens.len();
                     continue;
@@ -1499,6 +1515,14 @@ impl CopyRenderable {
 
                 if let Some((top, next_next_line)) = self.get_line(self.cursor.y + 1) {
                     self.cursor.y = top - 1; // adjust by top
+
+                    if next_next_line.len() != next_next_line.chars().count() {
+                        // unicode line. just return in old location
+                        self.cursor.x = old_x;
+                        self.cursor.y -= line_count;
+                        self.select_to_cursor_pos();
+                        return;
+                    }
 
                     let next_next_tokens = Self::collect_merged_tokens(&next_next_line, 0);
                     if let Some(idx) = Self::find_first_non_whitespace_token(&next_next_tokens) {
@@ -1549,6 +1573,11 @@ impl CopyRenderable {
             let prev_tokens;
             if let Some((top, prev_line)) = self.get_line(self.cursor.y - dec) {
                 self.cursor.y = top + dec; // adjust by top
+
+                if prev_line.len() != prev_line.chars().count() {
+                    // unicode line. just return
+                    return;
+                }
 
                 prev_tokens = Self::collect_merged_tokens(&prev_line, 0);
             } else {
