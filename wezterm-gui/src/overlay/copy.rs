@@ -957,7 +957,7 @@ impl CopyRenderable {
     }
 
     fn rfind_first_whitespace(string: &str) -> Option<usize> {
-        for i in (0..string.len()).rev() {
+        for i in (0..string.chars().count()).rev() {
             // If we find a whitespace character, return its index.
             if string.chars().nth(i).unwrap().is_whitespace() {
                 return Some(i);
