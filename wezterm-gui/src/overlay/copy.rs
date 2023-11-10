@@ -1524,7 +1524,16 @@ impl CopyRenderable {
         if let Some((top, curr_line)) = self.get_line(self.cursor.y) {
             self.cursor.y = top; // adjust by top
 
-            cursor_char = curr_line.chars().nth(self.cursor.x).unwrap();
+            if let Some(ch) = curr_line.chars().nth(self.cursor.x) {
+                cursor_char = ch;
+                if cursor_char.len_utf8() != 1 {
+                    // TODO: should handle unicode
+                    return;
+                }
+            } else {
+                // TODO: should handle unicode
+                return;
+            }
             curr_tokens = Self::collect_merged_tokens(&curr_line[self.cursor.x + 1..], self.cursor.x + 1);
 
             // log::info!("forward #1 : cursor.x={} cursor.y={} cursor_char=|{}| curr-token-len={} curr_line=|{}|",
@@ -1908,7 +1917,16 @@ impl CopyRenderable {
         if let Some((top, curr_line)) = self.get_line(self.cursor.y) {
             self.cursor.y = top; // adjust by top
 
-            cursor_char = curr_line.chars().nth(self.cursor.x).unwrap();
+            if let Some(ch) = curr_line.chars().nth(self.cursor.x) {
+                cursor_char = ch;
+                if cursor_char.len_utf8() != 1 {
+                    // TODO: should handle unicode
+                    return;
+                }
+            } else {
+                // TODO: should handle unicode
+                return;
+            }
             curr_tokens = Self::collect_merged_tokens(&curr_line[0..self.cursor.x], 0);
 
             // log::info!("backward #1 : cursor.x={} cursor.y={} cursor_char=|{}| curr-token-len={} curr_line=|{}|",
