@@ -409,7 +409,7 @@ pub fn impl_get_logical_lines_via_get_lines<P: Pane + ?Sized>(
     // (such as 1.5MB of json) that we previously wrapped.  We don't want to
     // un-wrap, scan, and re-wrap that thing.
     // This is an imperfect length constraint to partially manage the cost.
-    const MAX_LOGICAL_LINE_LEN: usize = 1024;
+    const MAX_LOGICAL_LINE_LEN: usize = 1024 * 10;
     let mut back_len = 0;
 
     // Look backwards to find the start of the first logical line
