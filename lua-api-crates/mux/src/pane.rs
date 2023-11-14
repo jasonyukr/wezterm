@@ -213,11 +213,13 @@ impl UserData for MuxPane {
             let (_first_row, lines) = pane.get_lines(top_row..bottom_row);
             let mut text = String::new();
             for line in lines {
+                let mut line_str = String::new(); // This is to keep the empty line case
                 for cell in line.visible_cells() {
-                    text.push_str(cell.str());
+                    line_str.push_str(cell.str());
                 }
-                let trimmed = text.trim_end().len();
-                text.truncate(trimmed);
+                let trimmed = line_str.trim_end().len();
+                line_str.truncate(trimmed);
+                text.push_str(&line_str);
                 text.push('\n');
             }
             let trimmed = text.trim_end().len();
@@ -237,11 +239,13 @@ impl UserData for MuxPane {
                 let lines = pane.get_logical_lines(top_row..bottom_row);
                 let mut text = String::new();
                 for line in lines {
+                    let mut line_str = String::new(); // This is to keep the empty line case
                     for cell in line.logical.visible_cells() {
-                        text.push_str(cell.str());
+                        line_str.push_str(cell.str());
                     }
-                    let trimmed = text.trim_end().len();
-                    text.truncate(trimmed);
+                    let trimmed = line_str.trim_end().len();
+                    line_str.truncate(trimmed);
+                    text.push_str(&line_str);
                     text.push('\n');
                 }
                 let trimmed = text.trim_end().len();
