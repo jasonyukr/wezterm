@@ -307,6 +307,43 @@ impl crate::TermWindow {
             .context("filled_rectangle")?;
         }
 
+        // Re-draw scrollbar area with background color under alt-screen.
+        // Logically this type of redrawing is not required. However this is just in case for weird display status.
+        if pos.is_active && self.show_scroll_bar && pos.pane.is_alt_screen_active() {
+            let thumb_y_offset = top_bar_height as usize + border.top.get();
+
+            let min_height = self.min_scroll_bar_height();
+
+            let info = ScrollHit::thumb(
+                &*pos.pane,
+                current_viewport,
+                self.dimensions.pixel_height.saturating_sub(
+                    thumb_y_offset + border.bottom.get() + bottom_bar_height as usize,
+                ),
+                min_height as usize,
+            );
+
+            let config = &self.config;
+            let padding = self.effective_right_padding(&config) as f32;
+
+            let thumb_x = self.dimensions.pixel_width - padding as usize - border.right.get();
+
+            self.filled_rectangle(
+                layers,
+                2,
+                euclid::rect(
+                    thumb_x as f32,
+                    thumb_y_offset as f32,
+                    padding as f32,
+                    self.dimensions.pixel_height.saturating_sub(
+                        thumb_y_offset + border.bottom.get() + bottom_bar_height as usize,
+                    ) as f32,
+                ),
+                palette.background.to_linear(),
+            )
+            .context("filled_rectangle")?;
+        }
+
         let (selrange, rectangular) = {
             let sel = self.selection(pos.pane.pane_id());
             (sel.range.clone(), sel.rectangular)
