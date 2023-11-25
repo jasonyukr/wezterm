@@ -127,10 +127,6 @@ pub trait ConnectionOps {
             .y
             .map(|y| y.evaluate_as_pixels(height_context) as i32 + bounds.origin.y as i32);
 
-        // HACK: avoid the window creation cases in other monitor
-        width = 100;
-        height = 100;
-
         ResolvedGeometry {
             x,
             y,
