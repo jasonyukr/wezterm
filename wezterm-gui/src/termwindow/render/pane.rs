@@ -592,7 +592,6 @@ impl crate::TermWindow {
                     let quad_value = LineQuadCacheValue {
                         layers: buf,
                         expires,
-                        line: (*line).clone(),
                         invalidate_on_hover_change: render_result.invalidate_on_hover_change,
                         current_highlight: if render_result.invalidate_on_hover_change {
                             self.term_window.current_highlight.clone()
@@ -632,7 +631,7 @@ impl crate::TermWindow {
             // TODO: render a thingy to jump to prior prompt
         }
         */
-        metrics::histogram!("paint_pane.lines", start.elapsed());
+        metrics::histogram!("paint_pane.lines").record(start.elapsed());
         log::trace!("lines elapsed {:?}", start.elapsed());
 
         Ok(())

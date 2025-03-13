@@ -500,6 +500,18 @@ impl KeyCode {
                         10 => "\x1b[21",
                         11 => "\x1b[23",
                         12 => "\x1b[24",
+                        13 => "\x1b[25",
+                        14 => "\x1b[26",
+                        15 => "\x1b[28",
+                        16 => "\x1b[29",
+                        17 => "\x1b[31",
+                        18 => "\x1b[32",
+                        19 => "\x1b[33",
+                        20 => "\x1b[34",
+                        21 => "\x1b[42",
+                        22 => "\x1b[43",
+                        23 => "\x1b[44",
+                        24 => "\x1b[45",
                         _ => bail!("unhandled fkey number {}", n),
                     };
                     let encoded_mods = mods.encode_xterm();
@@ -1330,7 +1342,7 @@ impl InputParser {
                         // end marker in 8K, 16K, 24K etc. of text until the final buffer is received.
                         // Ensure that we use saturating math here for the case where the amount
                         // of buffered data after the begin paste is smaller than the end paste marker
-                        // <https://github.com/wez/wezterm/pull/1832>
+                        // <https://github.com/wezterm/wezterm/pull/1832>
                         self.state =
                             InputState::Pasting(self.buf.len().saturating_sub(end_paste.len()));
                         return;

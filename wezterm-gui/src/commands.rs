@@ -1,5 +1,6 @@
 use crate::inputmap::InputMap;
 use config::keyassignment::*;
+use config::window::WindowLevel;
 use config::{ConfigHandle, DeferredKeyCode};
 use mux::domain::DomainState;
 use mux::Mux;
@@ -170,7 +171,11 @@ impl CommandDef {
                 None
             }
             Some(def) => {
-                let keys = def.permute_keys(config);
+                let keys = if is_built_in && config.disable_default_key_bindings {
+                    vec![]
+                } else {
+                    def.permute_keys(config)
+                };
                 Some(ExpandedCommand {
                     brief: def.brief.into(),
                     doc: def.doc.into(),
@@ -236,7 +241,7 @@ impl CommandDef {
             for dom in &domains {
                 let name = dom.domain_name();
                 // FIXME: use domain_label here, but needs to be async
-                let label = name.clone();
+                let label = name;
 
                 if dom.spawnable() {
                     if dom.state() == DomainState::Attached {
@@ -266,7 +271,7 @@ impl CommandDef {
             for dom in &domains {
                 let name = dom.domain_name();
                 // FIXME: use domain_label here, but needs to be async
-                let label = name.clone();
+                let label = name;
 
                 if dom.state() == DomainState::Attached {
                     if name == "local" {
@@ -378,6 +383,7 @@ impl CommandDef {
         let inputmap = InputMap::new(config);
 
         let mut candidates_for_removal = vec![];
+        #[allow(unexpected_cfgs)] // <https://github.com/SSheldon/rust-objc/issues/125>
         let wezterm_perform_key_assignment_sel = sel!(weztermPerformKeyAssignment:);
 
         /// Mark menu items as candidates for removal
@@ -681,6 +687,47 @@ pub fn derive_command_from_key_assignment(action: &KeyAssignment) -> Option<Comm
             menubar: &["View"],
             icon: Some("md_fullscreen"),
         },
+        ToggleAlwaysOnTop => CommandDef {
+            brief: "Toggle always on Top".into(),
+            doc: "Toggles the window between floating and non-floating states to stay on top of other windows.".into(),
+            keys: vec![],
+            args: &[ArgType::ActiveWindow],
+            menubar: &["Window"],
+            icon: None,
+
+        },
+        ToggleAlwaysOnBottom => CommandDef {
+            brief: "Toggle always on Bottom".into(),
+            doc: "Toggles the window to remain behind all other windows.".into(),
+            keys: vec![],
+            args: &[ArgType::ActiveWindow],
+            menubar: &["Window"],
+            icon: None,
+        },
+        SetWindowLevel(WindowLevel::AlwaysOnTop) => CommandDef {
+            brief: "Always on Top".into(),
+            doc: "Set the window level to be on top of other windows.".into(),
+            keys: vec![],
+            args: &[ArgType::ActiveWindow],
+            menubar: &["Window", "Level"],
+            icon: None,
+        },
+        SetWindowLevel(WindowLevel::Normal) => CommandDef {
+            brief: "Normal".into(),
+            doc: "Set window level to normal".into(),
+            keys: vec![],
+            args: &[ArgType::ActiveWindow],
+            menubar: &["Window", "Level"],
+            icon: None,
+        },
+        SetWindowLevel(WindowLevel::AlwaysOnBottom) => CommandDef {
+            brief: "Always on Bottom".into(),
+            doc: "Set window to remain behind all other windows.".into(),
+            keys: vec![],
+            args: &[ArgType::ActiveWindow],
+            menubar: &["Window", "Level"],
+            icon: None,
+        },
         Hide => CommandDef {
             brief: "Hide/Minimize Window".into(),
             doc: "Hides/Mimimizes the current window".into(),
@@ -797,8 +844,55 @@ pub fn derive_command_from_key_assignment(action: &KeyAssignment) -> Option<Comm
             menubar: &["Edit"],
             icon: Some("md_sticker_emoji"),
         },
-        PaneSelect(_) => CommandDef {
+        PaneSelect(PaneSelectArguments {
+            mode: PaneSelectMode::Activate,
+            ..
+        }) => CommandDef {
             brief: "Enter Pane selection mode".into(),
+            doc: "Activates the pane selection UI".into(),
+            keys: vec![], // FIXME: find a new assignment
+            args: &[ArgType::ActivePane],
+            menubar: &["Window"],
+            icon: Some("cod_multiple_windows"),
+        },
+        PaneSelect(PaneSelectArguments {
+            mode: PaneSelectMode::SwapWithActive,
+            ..
+        }) => CommandDef {
+            brief: "Swap a pane with the active pane".into(),
+            doc: "Activates the pane selection UI".into(),
+            keys: vec![], // FIXME: find a new assignment
+            args: &[ArgType::ActivePane],
+            menubar: &["Window"],
+            icon: Some("cod_multiple_windows"),
+        },
+        PaneSelect(PaneSelectArguments {
+            mode: PaneSelectMode::SwapWithActiveKeepFocus,
+            ..
+        }) => CommandDef {
+            brief: "Swap a pane with the active pane, keeping focus".into(),
+            doc: "Activates the pane selection UI".into(),
+            keys: vec![], // FIXME: find a new assignment
+            args: &[ArgType::ActivePane],
+            menubar: &["Window"],
+            icon: Some("cod_multiple_windows"),
+        },
+        PaneSelect(PaneSelectArguments {
+            mode: PaneSelectMode::MoveToNewTab,
+            ..
+        }) => CommandDef {
+            brief: "Move a pane into its own tab".into(),
+            doc: "Activates the pane selection UI".into(),
+            keys: vec![], // FIXME: find a new assignment
+            args: &[ArgType::ActivePane],
+            menubar: &["Window"],
+            icon: Some("cod_multiple_windows"),
+        },
+        PaneSelect(PaneSelectArguments {
+            mode: PaneSelectMode::MoveToNewWindow,
+            ..
+        }) => CommandDef {
+            brief: "Move a pane into its own window".into(),
             doc: "Activates the pane selection UI".into(),
             keys: vec![], // FIXME: find a new assignment
             args: &[ArgType::ActivePane],
@@ -1575,7 +1669,7 @@ pub fn derive_command_from_key_assignment(action: &KeyAssignment) -> Option<Comm
             icon: Some("md_pipe_disconnected"),
         },
         OpenUri(uri) => match uri.as_ref() {
-            "https://wezfurlong.org/wezterm/" => CommandDef {
+            "https://wezterm.org/" => CommandDef {
                 brief: "Documentation".into(),
                 doc: "Visit the wezterm documentation website".into(),
                 keys: vec![],
@@ -1583,7 +1677,7 @@ pub fn derive_command_from_key_assignment(action: &KeyAssignment) -> Option<Comm
                 menubar: &["Help"],
                 icon: Some("md_help"),
             },
-            "https://github.com/wez/wezterm/discussions/" => CommandDef {
+            "https://github.com/wezterm/wezterm/discussions/" => CommandDef {
                 brief: "Discuss on GitHub".into(),
                 doc: "Visit wezterm's GitHub discussion".into(),
                 keys: vec![],
@@ -1591,7 +1685,7 @@ pub fn derive_command_from_key_assignment(action: &KeyAssignment) -> Option<Comm
                 menubar: &["Help"],
                 icon: Some("oct_comment_discussion"),
             },
-            "https://github.com/wez/wezterm/issues/" => CommandDef {
+            "https://github.com/wezterm/wezterm/issues/" => CommandDef {
                 brief: "Search or report issue on GitHub".into(),
                 doc: "Visit wezterm's GitHub issues".into(),
                 keys: vec![],
@@ -1969,9 +2063,38 @@ fn compute_default_actions() -> Vec<KeyAssignment> {
         ScrollToBottom,
         // ----------------- Window
         ToggleFullScreen,
+        ToggleAlwaysOnTop,
+        ToggleAlwaysOnBottom,
+        SetWindowLevel(WindowLevel::AlwaysOnBottom),
+        SetWindowLevel(WindowLevel::Normal),
+        SetWindowLevel(WindowLevel::AlwaysOnTop),
         Hide,
         Search(Pattern::CurrentSelectionOrEmptyString),
-        PaneSelect(PaneSelectArguments::default()),
+        PaneSelect(PaneSelectArguments {
+            alphabet: String::new(),
+            mode: PaneSelectMode::Activate,
+            show_pane_ids: false,
+        }),
+        PaneSelect(PaneSelectArguments {
+            alphabet: String::new(),
+            mode: PaneSelectMode::SwapWithActive,
+            show_pane_ids: false,
+        }),
+        PaneSelect(PaneSelectArguments {
+            alphabet: String::new(),
+            mode: PaneSelectMode::SwapWithActiveKeepFocus,
+            show_pane_ids: false,
+        }),
+        PaneSelect(PaneSelectArguments {
+            alphabet: String::new(),
+            mode: PaneSelectMode::MoveToNewTab,
+            show_pane_ids: false,
+        }),
+        PaneSelect(PaneSelectArguments {
+            alphabet: String::new(),
+            mode: PaneSelectMode::MoveToNewWindow,
+            show_pane_ids: false,
+        }),
         RotatePanes(RotationDirection::Clockwise),
         RotatePanes(RotationDirection::CounterClockwise),
         ActivateTab(0),
@@ -2012,9 +2135,9 @@ fn compute_default_actions() -> Vec<KeyAssignment> {
         ShowLauncher,
         ShowTabNavigator,
         // ----------------- Help
-        OpenUri("https://wezfurlong.org/wezterm/".to_string()),
-        OpenUri("https://github.com/wez/wezterm/discussions/".to_string()),
-        OpenUri("https://github.com/wez/wezterm/issues/".to_string()),
+        OpenUri("https://wezterm.org/".to_string()),
+        OpenUri("https://github.com/wezterm/wezterm/discussions/".to_string()),
+        OpenUri("https://github.com/wezterm/wezterm/issues/".to_string()),
         ShowDebugOverlay,
         // ----------------- Misc
         OpenLinkAtMouseCursor,

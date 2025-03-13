@@ -15,6 +15,10 @@ use std::os::unix::fs::PermissionsExt;
 /// NOTE: OpenSSH's sshd requires absolute path
 const BIN_PATH_STR: &str = "/usr/sbin/sshd";
 
+pub fn sshd_available() -> bool {
+    Path::new(BIN_PATH_STR).exists()
+}
+
 /// Ask the kernel to assign a free port.
 /// We pass this to sshd and tell it to listen on that port.
 /// This is racy, as releasing the socket technically makes
@@ -431,11 +435,13 @@ impl std::ops::DerefMut for SessionWithSshd {
 
 #[fixture]
 /// Stand up an sshd instance and then connect to it and perform authentication
-pub async fn session(sshd: Sshd) -> SessionWithSshd {
+pub async fn session(#[default(Config::new())] config: Config, sshd: Sshd) -> SessionWithSshd {
     let port = sshd.port;
 
-    let mut config = Config::new();
-    config.add_default_config_files();
+    // Do not add the default config files; they take the config of the
+    // user that is running the tests which can vary wildly and have
+    // inappropriate configuration that disrupts the tests.
+    // NO: config.add_default_config_files();
 
     // Load our config to point to ourselves, using current sshd instance's port,
     // generated identity file, and host file

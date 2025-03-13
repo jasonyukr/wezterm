@@ -9,18 +9,17 @@ use ::window::{Point, Rect};
 use anyhow::Context;
 use config::{AllowSquareGlyphOverflow, TextStyle};
 use euclid::num::Zero;
-use image::io::Limits;
 use image::{
-    AnimationDecoder, ColorType, DynamicImage, Frame, Frames, ImageDecoder, ImageFormat,
-    ImageResult,
+    AnimationDecoder, DynamicImage, Frame, Frames, ImageDecoder, ImageFormat, ImageResult, Limits,
 };
 use lfucache::LfuCache;
 use once_cell::sync::Lazy;
 use ordered_float::NotNan;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::io::{Read, Seek};
+use std::io::Seek;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{sync_channel, Receiver, RecvTimeoutError, SyncSender, TryRecvError};
 use std::sync::{Arc, MutexGuard};
 use std::time::{Duration, Instant};
@@ -31,6 +30,20 @@ use wezterm_blob_leases::{BlobLease, BlobManager, BoxedReader};
 use wezterm_font::units::*;
 use wezterm_font::{FontConfiguration, GlyphInfo, LoadedFont, LoadedFontId};
 use wezterm_term::Underline;
+
+static FRAME_ERROR_REPORTED: AtomicBool = AtomicBool::new(false);
+
+/// We only want to report a frame error once at error level, because
+/// if it is triggering it is likely in a animated image and will continue
+/// to trigger multiple times per second as the frames are cycled.
+fn report_frame_error<S: Into<String>>(message: S) {
+    if FRAME_ERROR_REPORTED.load(Ordering::Relaxed) {
+        log::debug!("{}", message.into());
+    } else {
+        log::error!("{}", message.into());
+        FRAME_ERROR_REPORTED.store(true, Ordering::Relaxed);
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoadState {
@@ -225,7 +238,7 @@ impl FrameDecoder {
         let (tx, rx) = sync_channel(2);
 
         let buf_reader = lease.get_reader().context("lease.get_reader()")?;
-        let reader = image::io::Reader::new(buf_reader)
+        let reader = image::ImageReader::new(buf_reader)
             .with_guessed_format()
             .context("guess format from lease")?;
         let format = reader
@@ -247,7 +260,7 @@ impl FrameDecoder {
     }
 
     fn run_decoder_thread(
-        reader: image::io::Reader<BoxedReader>,
+        reader: image::ImageReader<BoxedReader>,
         format: ImageFormat,
         tx: SyncSender<DecodedFrame>,
     ) -> anyhow::Result<()> {
@@ -257,8 +270,11 @@ impl FrameDecoder {
             ImageFormat::Gif => {
                 let mut reader = reader.into_inner();
                 reader.rewind().context("rewinding reader for gif")?;
-                let decoder = image::codecs::gif::GifDecoder::with_limits(reader, limits)
-                    .context("GifDecoder::with_limits")?;
+                let mut decoder =
+                    image::codecs::gif::GifDecoder::new(reader).context("GifDecoder::new")?;
+                decoder
+                    .set_limits(limits)
+                    .context("GifDecoder::set_limits")?;
                 decoder.into_frames()
             }
             ImageFormat::Png => {
@@ -266,59 +282,10 @@ impl FrameDecoder {
                 reader.rewind().context("rewinding reader for png")?;
                 let decoder = image::codecs::png::PngDecoder::with_limits(reader, limits.clone())
                     .context("PngDecoder::with_limits")?;
-                if decoder.is_apng() {
-                    decoder.apng().into_frames()
+                if decoder.is_apng().unwrap_or(false) {
+                    decoder.apng()?.into_frames()
                 } else {
-                    let size = decoder.total_bytes() as usize;
-                    let mut buf = vec![0u8; size];
-                    let (width, height) = decoder.dimensions();
-                    let color_type = decoder.color_type();
-                    let mut reader = decoder.into_reader().context("PngDecoder into_reader")?;
-                    reader.read(&mut buf)?;
-
-                    let buf: image::RgbaImage = match color_type {
-                        ColorType::Rgb8 => DynamicImage::ImageRgb8(
-                            image::RgbImage::from_raw(width, height, buf).ok_or_else(|| {
-                                anyhow::anyhow!(
-                                    "PNG {color_type:?} {size} / {width}x{height} = {} \
-                                    bytes per pixel",
-                                    size / (width * height) as usize
-                                )
-                            })?,
-                        )
-                        .into_rgba8(),
-                        ColorType::Rgba8 => image::RgbaImage::from_raw(width, height, buf)
-                            .ok_or_else(|| {
-                                anyhow::anyhow!(
-                                    "PNG {color_type:?} {size} / {width}x{height} = {} \
-                                    bytes per pixel",
-                                    size / (width * height) as usize
-                                )
-                            })?,
-                        ColorType::L8 => DynamicImage::ImageLuma8(
-                            image::ImageBuffer::<image::Luma<_>, _>::from_raw(width, height, buf)
-                                .ok_or_else(|| {
-                                anyhow::anyhow!(
-                                    "PNG {color_type:?} {size} / {width}x{height} = {} \
-                                    bytes per pixel",
-                                    size / (width * height) as usize
-                                )
-                            })?,
-                        )
-                        .into_rgba8(),
-                        ColorType::La8 => DynamicImage::ImageLumaA8(
-                            image::ImageBuffer::<image::LumaA<_>, _>::from_raw(width, height, buf)
-                                .ok_or_else(|| {
-                                    anyhow::anyhow!(
-                                        "PNG {color_type:?} {size} / {width}x{height} = {} \
-                                    bytes per pixel",
-                                        size / (width * height) as usize
-                                    )
-                                })?,
-                        )
-                        .into_rgba8(),
-                        _ => anyhow::bail!("unimplemented PNG conversion from {color_type:?}"),
-                    };
+                    let buf = DynamicImage::from_decoder(decoder)?.into_rgba8();
                     let delay = image::Delay::from_numer_denom_ms(u32::MAX, 1);
                     let frame = Frame::from_parts(buf, 0, 0, delay);
                     Frames::new(Box::new(std::iter::once(ImageResult::Ok(frame))))
@@ -681,10 +648,10 @@ impl GlyphCache {
         };
 
         if let Some(entry) = self.glyph_cache.get(&key as &dyn GlyphKeyTrait) {
-            metrics::histogram!("glyph_cache.glyph_cache.hit.rate", 1.);
+            metrics::histogram!("glyph_cache.glyph_cache.hit.rate").record(1.);
             return Ok(Rc::clone(entry));
         }
-        metrics::histogram!("glyph_cache.glyph_cache.miss.rate", 1.);
+        metrics::histogram!("glyph_cache.glyph_cache.miss.rate").record(1.);
 
         let glyph = match self.load_glyph(info, font, followed_by_space, num_cells) {
             Ok(g) => g,
@@ -771,7 +738,7 @@ impl GlyphCache {
         };
 
         // We shouldn't need to render a glyph that occupies zero cells, but that
-        // can happen somehow; see <https://github.com/wez/wezterm/issues/1042>
+        // can happen somehow; see <https://github.com/wezterm/wezterm/issues/1042>
         // so let's treat 0 cells as 1 cell so that we don't try to divide by
         // zero below.
         let num_cells = num_cells.max(1) as f64;
@@ -781,6 +748,12 @@ impl GlyphCache {
         let max_pixel_width = base_metrics.cell_width.get() * (num_cells + 0.25);
 
         let scale;
+
+        // This helps to compensate for the !idx_metrics.is_scaled && glyph.is_scaled
+        // case which happens when using the harfbuzz rasterizer with a bitmap font.
+        // The default value is no compensation.
+        let mut metrics_only_scale = 1.0;
+
         if info.font_idx == 0 {
             // We are the base font
             scale = if allow_width_overflow || glyph.width as f64 <= max_pixel_width {
@@ -789,7 +762,7 @@ impl GlyphCache {
                 // Scale the glyph to fit in its number of cells
                 1.0 / num_cells
             };
-        } else if !idx_metrics.is_scaled {
+        } else if !glyph.is_scaled {
             // A bitmap font that isn't scaled to the requested height.
             let y_scale = base_metrics.cell_height.get() / idx_metrics.cell_height.get();
             let y_scaled_width = y_scale * glyph.width as f64;
@@ -812,18 +785,29 @@ impl GlyphCache {
                 scale = max_pixel_width / f_width;
             }
 
+            if !idx_metrics.is_scaled {
+                // A special case: the shaper (eg: harfbuzz) processed
+                // a bitmap font (eg: older versions of Noto Color Emoji)
+                // to produce shaping info at the bitmap strike size,
+                // which is 128 for that font.  The advance is expressed
+                // at that size and not at the size of the font.
+                // If we get to this condition, the rasterizer used a mode
+                // where it has already scaled the glyph, so the dimensions
+                // in the bitmap are correct, but the shaper metrics need
+                // to be adjusted.
+                let y_scale = base_metrics.cell_height.get() / idx_metrics.cell_height.get();
+                metrics_only_scale = y_scale;
+            }
+
             #[cfg(debug_assertions)]
             {
                 log::debug!(
-                    "{} allow_width_overflow={} is_square_or_wide={} aspect={} \
-                       max_pixel_width={} glyph.width={} -> scale={}",
-                    info.text,
-                    allow_width_overflow,
-                    is_square_or_wide,
-                    aspect,
-                    max_pixel_width,
-                    glyph.width,
-                    scale
+                    "{text} allow_width_overflow={allow_width_overflow} \
+                     is_square_or_wide={is_square_or_wide} aspect={aspect} \
+                     max_pixel_width={max_pixel_width} glyph.width={glyph_width} \
+                     -> scale={scale} metrics_only_scale={metrics_only_scale}",
+                    text = info.text,
+                    glyph_width = glyph.width,
                 );
             }
         };
@@ -857,11 +841,19 @@ impl GlyphCache {
                 &glyph.data,
             );
 
-            let bearing_x = glyph.bearing_x * scale;
+            let bearing_x = glyph.bearing_x * scale * metrics_only_scale;
+            // No metrics_only_scale adjustment to bearing_y is needed because
+            // the value comes from the rasterized glyph and not from the
+            // shaper stage.
             let bearing_y = descender_adjust + (glyph.bearing_y * scale);
-            let x_offset = info.x_offset * scale;
-            let y_offset = info.y_offset * scale;
-            let x_advance = info.x_advance * scale;
+            let x_offset = info.x_offset * scale * metrics_only_scale;
+            let y_offset = info.y_offset * scale * metrics_only_scale;
+            let x_advance = info.x_advance * scale * metrics_only_scale;
+
+            log::trace!(
+                "bearing_x={bearing_x:?} bearing_y={bearing_y:?} \
+                 x_offset={x_offset:?} y_offset={y_offset:?} x_advance={x_advance:?}"
+            );
 
             let (scale, raw_im) = if scale != 1.0 {
                 log::trace!(
@@ -956,7 +948,7 @@ impl GlyphCache {
                     // that any given cell may switch to a different frame from
                     // its neighbor while we are rendering the entire terminal
                     // frame, so we want to avoid that.
-                    // <https://github.com/wez/wezterm/issues/3260>
+                    // <https://github.com/wezterm/wezterm/issues/3260>
                     let mut next_due = *decoded_frame_start
                         + durations[*decoded_current_frame].max(min_frame_duration);
                     if now >= next_due {
@@ -1025,7 +1017,7 @@ impl GlyphCache {
                 // that any given cell may switch to a different frame from
                 // its neighbor while we are rendering the entire terminal
                 // frame, so we want to avoid that.
-                // <https://github.com/wez/wezterm/issues/3260>
+                // <https://github.com/wezterm/wezterm/issues/3260>
                 let mut next_due =
                     *decoded_frame_start + frames.frame_duration().max(min_frame_duration);
                 if now >= next_due {
@@ -1047,14 +1039,35 @@ impl GlyphCache {
                     return Ok((sprite.clone(), next, frames.load_state));
                 }
 
+                let expected_byte_size =
+                    frames.current_frame.width * frames.current_frame.height * 4;
+
+                let frame_data = match frames.current_frame.lease.get_data() {
+                    Ok(data) => {
+                        // If the size isn't right, ignore this frame and replace
+                        // it with a blank one instead. This might happen if
+                        // some process is truncating the files, or perhaps if
+                        // the disk is full.
+                        // We need to check for this because the consequence of
+                        // a mismatched size is a panic in a layer where we
+                        // cannot handle the error case.
+                        if data.len() != expected_byte_size {
+                            report_frame_error(format!("frame data is corrupted: expected size {expected_byte_size} but have {}", data.len()));
+                            vec![0u8; expected_byte_size]
+                        } else {
+                            data
+                        }
+                    }
+                    Err(err) => {
+                        report_frame_error(format!("frame data error: {err:#}"));
+                        vec![0u8; expected_byte_size]
+                    }
+                };
+
                 let frame = Image::from_raw(
                     frames.current_frame.width,
                     frames.current_frame.height,
-                    frames
-                        .current_frame
-                        .lease
-                        .get_data()
-                        .context("frames.current_frame.lease.get_data")?,
+                    frame_data,
                 );
                 let sprite = atlas.allocate_with_padding(&frame, padding, scale_down)?;
 

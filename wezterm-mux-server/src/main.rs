@@ -16,7 +16,7 @@ mod daemonize;
 
 #[derive(Debug, Parser)]
 #[command(
-    about = "Wez's Terminal Emulator\nhttp://github.com/wez/wezterm",
+    about = "Wez's Terminal Emulator\nhttp://github.com/wezterm/wezterm",
     version = config::wezterm_version(),
     trailing_var_arg = true,
 )]
@@ -99,6 +99,9 @@ fn run() -> anyhow::Result<()> {
     let config = config::configuration();
 
     config.update_ulimit()?;
+    if let Some(value) = &config.default_ssh_auth_sock {
+        std::env::set_var("SSH_AUTH_SOCK", value);
+    }
 
     #[cfg(unix)]
     let mut pid_file = None;
@@ -202,7 +205,7 @@ fn run() -> anyhow::Result<()> {
     }
 
     wezterm_blob_leases::register_storage(Arc::new(
-        wezterm_blob_leases::simple_tempdir::SimpleTempDir::new()?,
+        wezterm_blob_leases::simple_tempdir::SimpleTempDir::new_in(&*config::CACHE_DIR)?,
     ))?;
 
     let need_builder = !opts.prog.is_empty() || opts.cwd.is_some();
@@ -291,7 +294,7 @@ async fn async_run(cmd: Option<CommandBuilder>) -> anyhow::Result<()> {
 
         let _tab = mux
             .default_domain()
-            .spawn(config.initial_size(0), cmd, None, *window_id)
+            .spawn(config.initial_size(0, None), cmd, None, *window_id)
             .await?;
     }
     Ok(())

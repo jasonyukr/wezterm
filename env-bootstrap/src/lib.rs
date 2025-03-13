@@ -116,6 +116,7 @@ pub fn fixup_appimage() {
 /// it to a UTF-8 version of the current locale known to NSLocale.
 #[cfg(target_os = "macos")]
 pub fn set_lang_from_locale() {
+    #![allow(unexpected_cfgs)] // <https://github.com/SSheldon/rust-objc/issues/125>
     use cocoa::base::id;
     use cocoa::foundation::NSString;
     use objc::runtime::Object;
@@ -146,8 +147,8 @@ pub fn set_lang_from_locale() {
                 let country_code = nsstring_to_str(country_code_obj);
 
                 let candidate = format!("{}_{}.UTF-8", lang_code, country_code);
-                let candidate_cstr = std::ffi::CString::new(candidate.as_bytes().clone())
-                    .expect("make cstr from str");
+                let candidate_cstr =
+                    std::ffi::CString::new(candidate.as_bytes()).expect("make cstr from str");
 
                 // If this looks like a working locale then export it to
                 // the environment so that our child processes inherit it.
@@ -199,12 +200,13 @@ fn register_lua_modules() {
         mux_lua::register,
         procinfo_funcs::register,
         filesystem::register,
-        json::register,
+        serde_funcs::register,
         plugin::register,
         ssh_funcs::register,
         spawn_funcs::register,
         share_data::register,
         time_funcs::register,
+        url_funcs::register,
     ] {
         config::lua::add_context_setup_func(func);
     }
@@ -234,7 +236,7 @@ pub fn bootstrap() {
     std::env::remove_var("WINDOWID");
     // Avoid vte shell integration kicking in if someone started
     // wezterm or the mux server from inside gnome terminal.
-    // <https://github.com/wez/wezterm/issues/2237>
+    // <https://github.com/wezterm/wezterm/issues/2237>
     std::env::remove_var("VTE_VERSION");
 
     // Sice folks don't like to reboot or sign out if they `chsh`,

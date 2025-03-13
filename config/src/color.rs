@@ -563,25 +563,25 @@ fn default_window_close() -> String {
 #[derive(Debug, Clone, FromDynamic, ToDynamic)]
 pub struct WindowFrameConfig {
     #[dynamic(default = "default_inactive_titlebar_bg")]
-    pub inactive_titlebar_bg: RgbColor,
+    pub inactive_titlebar_bg: RgbaColor,
     #[dynamic(default = "default_active_titlebar_bg")]
-    pub active_titlebar_bg: RgbColor,
+    pub active_titlebar_bg: RgbaColor,
     #[dynamic(default = "default_inactive_titlebar_fg")]
-    pub inactive_titlebar_fg: RgbColor,
+    pub inactive_titlebar_fg: RgbaColor,
     #[dynamic(default = "default_active_titlebar_fg")]
-    pub active_titlebar_fg: RgbColor,
+    pub active_titlebar_fg: RgbaColor,
     #[dynamic(default = "default_inactive_titlebar_border_bottom")]
-    pub inactive_titlebar_border_bottom: RgbColor,
+    pub inactive_titlebar_border_bottom: RgbaColor,
     #[dynamic(default = "default_active_titlebar_border_bottom")]
-    pub active_titlebar_border_bottom: RgbColor,
+    pub active_titlebar_border_bottom: RgbaColor,
     #[dynamic(default = "default_button_fg")]
-    pub button_fg: RgbColor,
+    pub button_fg: RgbaColor,
     #[dynamic(default = "default_button_bg")]
-    pub button_bg: RgbColor,
+    pub button_bg: RgbaColor,
     #[dynamic(default = "default_button_hover_fg")]
-    pub button_hover_fg: RgbColor,
+    pub button_hover_fg: RgbaColor,
     #[dynamic(default = "default_button_hover_bg")]
-    pub button_hover_bg: RgbColor,
+    pub button_hover_bg: RgbaColor,
 
     #[dynamic(default)]
     pub font: Option<TextStyle>,
@@ -616,8 +616,8 @@ impl Default for WindowFrameConfig {
             active_titlebar_fg: default_active_titlebar_fg(),
             inactive_titlebar_border_bottom: default_inactive_titlebar_border_bottom(),
             active_titlebar_border_bottom: default_active_titlebar_border_bottom(),
-            button_fg: default_button_fg(),
-            button_bg: default_button_bg(),
+            button_fg: default_button_fg().into(),
+            button_bg: default_button_bg().into(),
             button_hover_fg: default_button_hover_fg(),
             button_hover_bg: default_button_hover_bg(),
             font: None,
@@ -634,44 +634,44 @@ impl Default for WindowFrameConfig {
     }
 }
 
-fn default_inactive_titlebar_bg() -> RgbColor {
-    RgbColor::new_8bpc(0x33, 0x33, 0x33)
+fn default_inactive_titlebar_bg() -> RgbaColor {
+    RgbColor::new_8bpc(0x33, 0x33, 0x33).into()
 }
 
-fn default_active_titlebar_bg() -> RgbColor {
-    RgbColor::new_8bpc(0x33, 0x33, 0x33)
+fn default_active_titlebar_bg() -> RgbaColor {
+    RgbColor::new_8bpc(0x33, 0x33, 0x33).into()
 }
 
-fn default_inactive_titlebar_fg() -> RgbColor {
-    RgbColor::new_8bpc(0xcc, 0xcc, 0xcc)
+fn default_inactive_titlebar_fg() -> RgbaColor {
+    RgbColor::new_8bpc(0xcc, 0xcc, 0xcc).into()
 }
 
-fn default_active_titlebar_fg() -> RgbColor {
-    RgbColor::new_8bpc(0xff, 0xff, 0xff)
+fn default_active_titlebar_fg() -> RgbaColor {
+    RgbColor::new_8bpc(0xff, 0xff, 0xff).into()
 }
 
-fn default_inactive_titlebar_border_bottom() -> RgbColor {
-    RgbColor::new_8bpc(0x2b, 0x20, 0x42)
+fn default_inactive_titlebar_border_bottom() -> RgbaColor {
+    RgbColor::new_8bpc(0x2b, 0x20, 0x42).into()
 }
 
-fn default_active_titlebar_border_bottom() -> RgbColor {
-    RgbColor::new_8bpc(0x2b, 0x20, 0x42)
+fn default_active_titlebar_border_bottom() -> RgbaColor {
+    RgbColor::new_8bpc(0x2b, 0x20, 0x42).into()
 }
 
-fn default_button_hover_fg() -> RgbColor {
-    RgbColor::new_8bpc(0xff, 0xff, 0xff)
+fn default_button_hover_fg() -> RgbaColor {
+    RgbColor::new_8bpc(0xff, 0xff, 0xff).into()
 }
 
-fn default_button_fg() -> RgbColor {
-    RgbColor::new_8bpc(0xcc, 0xcc, 0xcc)
+fn default_button_fg() -> RgbaColor {
+    RgbColor::new_8bpc(0xcc, 0xcc, 0xcc).into()
 }
 
-fn default_button_hover_bg() -> RgbColor {
-    RgbColor::new_8bpc(0x1f, 0x1f, 0x1f)
+fn default_button_hover_bg() -> RgbaColor {
+    RgbColor::new_8bpc(0x1f, 0x1f, 0x1f).into()
 }
 
-fn default_button_bg() -> RgbColor {
-    RgbColor::new_8bpc(0x33, 0x33, 0x33)
+fn default_button_bg() -> RgbaColor {
+    RgbColor::new_8bpc(0x33, 0x33, 0x33).into()
 }
 
 #[derive(Debug, Default, Clone, Eq, PartialEq, FromDynamic, ToDynamic)]
@@ -733,8 +733,15 @@ fn dynamic_to_toml(value: Value) -> anyhow::Result<toml::Value> {
 
 impl ColorSchemeFile {
     pub fn from_toml_value(value: &toml::Value) -> anyhow::Result<Self> {
-        Self::from_dynamic(&crate::toml_to_dynamic(value), Default::default())
-            .map_err(|e| anyhow::anyhow!("{}", e))
+        let scheme = Self::from_dynamic(&crate::toml_to_dynamic(value), Default::default())
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+        anyhow::ensure!(
+            scheme.colors.ansi.is_some(),
+            "scheme is missing ANSI colors"
+        );
+
+        Ok(scheme)
     }
 
     pub fn from_toml_str(s: &str) -> anyhow::Result<Self> {

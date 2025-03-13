@@ -13,6 +13,7 @@ use std::rc::Rc;
 use std::time::Instant;
 use termwiz::cell::{unicode_column_width, Blink};
 use termwiz::color::LinearRgba;
+use termwiz::surface::CursorShape;
 use wezterm_bidi::Direction;
 use wezterm_term::color::ColorAttribute;
 use wezterm_term::CellAttributes;
@@ -143,9 +144,7 @@ impl crate::TermWindow {
             let params = LineToElementParams {
                 config: params.config,
                 line: params.line,
-                cursor: params.cursor,
                 palette: params.palette,
-                stable_line_idx: params.stable_line_idx.unwrap_or(0),
                 window_is_transparent: params.window_is_transparent,
                 reverse_video: params.dims.reverse_video,
                 shape_key: &params.shape_key,
@@ -244,7 +243,7 @@ impl crate::TermWindow {
 
                 // If the tab bar is falling just short of the full width of the
                 // window, extend it to fit.
-                // <https://github.com/wez/wezterm/issues/2210>
+                // <https://github.com/wezterm/wezterm/issues/2210>
                 if is_tab_bar && (x + width + cell_width) > params.pixel_width {
                     width += cell_width;
                 }
@@ -349,8 +348,14 @@ impl crate::TermWindow {
                 + params.left_pixel_x
                 + (phys(params.cursor.x, num_cols, direction) as f32 * cell_width);
 
-            if cursor_shape.is_some() {
-                let mut quad = layers.allocate(0).context("layers.allocate(0)")?;
+            if let Some(shape) = cursor_shape {
+                let cursor_layer = match shape {
+                    CursorShape::BlinkingBar | CursorShape::SteadyBar => 2,
+                    _ => 0,
+                };
+                let mut quad = layers
+                    .allocate(cursor_layer)
+                    .with_context(|| format!("layers.allocate({cursor_layer})"))?;
                 quad.set_hsv(hsv);
                 quad.set_has_color(false);
 
@@ -402,7 +407,7 @@ impl crate::TermWindow {
                             .glyph_cache
                             .borrow_mut()
                             .cursor_sprite(
-                                cursor_shape,
+                                Some(shape),
                                 &params.render_metrics,
                                 (cursor_range.end - cursor_range.start) as u8,
                             )?
@@ -705,7 +710,7 @@ impl crate::TermWindow {
             .context("populate_image_quad")?;
         }
 
-        metrics::histogram!("render_screen_line", start.elapsed());
+        metrics::histogram!("render_screen_line").record(start.elapsed());
 
         Ok(RenderScreenLineResult {
             invalidate_on_hover_change,
@@ -863,8 +868,6 @@ impl crate::TermWindow {
                 .sum();
 
             shaped.push(LineToElementShape {
-                attrs: style_params.attrs.clone(),
-                style: style_params.style.clone(),
                 underline_tex_rect: style_params.underline_tex_rect,
                 bg_color: style_params.bg_color,
                 fg_color: style_params.fg_color,
