@@ -149,6 +149,7 @@ pub enum TermWindowNotif {
         width: usize,
         height: usize,
     },
+    PeriodicRefresh,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -888,7 +889,15 @@ impl TermWindow {
         }
 
         crate::update::start_update_checker();
-        front_end().record_known_window(window, mux_window_id);
+        front_end().record_known_window(window.clone(), mux_window_id);
+
+        promise::spawn::spawn(async move {
+            loop {
+                Timer::after(Duration::from_secs(2)).await;
+                window.notify(TermWindowNotif::PeriodicRefresh);
+            }
+        })
+        .detach();
 
         Ok(())
     }
@@ -1353,6 +1362,9 @@ impl TermWindow {
             }
             TermWindowNotif::SetInnerSize { width, height } => {
                 self.set_inner_size(window, width, height);
+            }
+            TermWindowNotif::PeriodicRefresh => {
+                window.invalidate();
             }
         }
 
