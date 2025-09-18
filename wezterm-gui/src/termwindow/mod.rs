@@ -891,10 +891,47 @@ impl TermWindow {
         crate::update::start_update_checker();
         front_end().record_known_window(window.clone(), mux_window_id);
 
+        let tw_clone = Rc::clone(&tw);
         promise::spawn::spawn(async move {
+            let mut seq_map = HashMap::new();
+            if let Ok(tw_mut) = tw_clone.try_borrow() {
+                for pane in tw_mut.get_panes_to_render() {
+                    seq_map.insert(pane.pane.pane_id(), pane.pane.get_current_seqno());
+                }
+            }
+
             loop {
                 Timer::after(Duration::from_secs(2)).await;
-                window.notify(TermWindowNotif::PeriodicRefresh);
+
+                if let Ok(tw_mut) = tw_clone.try_borrow() {
+                    let mut new_seq_map = HashMap::new();
+                    let mut changed = false;
+                    for pane in tw_mut.get_panes_to_render() {
+                        let pane_id = pane.pane.pane_id();
+                        let new_seqno = pane.pane.get_current_seqno();
+                        new_seq_map.insert(pane_id, new_seqno);
+
+                        if let Some(old_seqno) = seq_map.get(&pane_id) {
+                            if *old_seqno != new_seqno {
+                                changed = true;
+                            }
+                        } else {
+                            // new pane
+                            changed = true;
+                        }
+                    }
+
+                    if seq_map.len() != new_seq_map.len() {
+                        changed = true;
+                    }
+
+                    if changed {
+                        if let Some(window) = &tw_mut.window {
+                            window.notify(TermWindowNotif::PeriodicRefresh);
+                        }
+                    }
+                    seq_map = new_seq_map;
+                }
             }
         })
         .detach();
