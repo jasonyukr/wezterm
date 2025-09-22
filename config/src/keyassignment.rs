@@ -700,8 +700,6 @@ pub enum CopyModeAssignment {
     MoveForwardWordEnd,
     ForwardNonWSWords,
     BackwardNonWSWords,
-    ViModeForwardToWordStart,
-    ViModeBackwardToWordStart,
     MoveRight,
     MoveLeft,
     MoveUp,

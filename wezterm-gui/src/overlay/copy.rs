@@ -1201,11 +1201,6 @@ impl CopyRenderable {
         self.select_to_cursor_pos();
     }
 
-    fn vi_mode_forward_to_word_start(&mut self) {
-    }
-    fn vi_mode_backward_to_word_start(&mut self, jump_done: bool) {
-    }
-
     // mimic the behavior of vi "W" key
     fn forward_non_whitespace_words(&mut self) {
         let cursor_char;
@@ -1551,13 +1546,11 @@ impl CopyRenderable {
                         // "|Ws|"   // "|Ws|"
                         // "|W"     // "|sW"
                         self.cursor.y += 1;
-                        line_count += 1;
                         self.cursor.x = next_next_tokens[idx].position;
                     } else {
                         // "|Ws|"
                         // "|s|"
                         self.cursor.y += 1;
-                        line_count += 1;
                         self.cursor.x = 0;
                     }
                 } else {
@@ -1570,19 +1563,16 @@ impl CopyRenderable {
             } else {
                 // "|sW|"
                 self.cursor.y += 1;
-                line_count += 1;
                 self.cursor.x = next_tokens[1].position;
             }
         } else {
             if !next_tokens[0].is_ws {
                 // "|WsW"
                 self.cursor.y += 1;
-                line_count += 1;
                 self.cursor.x = next_tokens[2].position;
             } else {
                 // "|sWs"
                 self.cursor.y += 1;
-                line_count += 1;
                 self.cursor.x = next_tokens[1].position;
             }
         }
@@ -2257,8 +2247,6 @@ impl Pane for CopyOverlay {
                     MoveForwardWordEnd => render.move_to_end_of_word(),
                     ForwardNonWSWords => render.forward_non_whitespace_words(),
                     BackwardNonWSWords => render.backward_non_whitespace_words(),
-                    ViModeForwardToWordStart => render.vi_mode_forward_to_word_start(),
-                    ViModeBackwardToWordStart => render.vi_mode_backward_to_word_start(false),
                     MoveRight => render.move_right_single_cell(),
                     MoveLeft => render.move_left_single_cell(),
                     MoveUp => render.move_up_single_row(),
