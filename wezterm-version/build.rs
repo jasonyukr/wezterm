@@ -1,3 +1,10 @@
+// libgit2 uses the Windows security and registry APIs.  Recent Rust MSVC
+// toolchains no longer link advapi32 through the standard library, so link it
+// explicitly for this build script (which uses libgit2 through git2).
+#[cfg(windows)]
+#[link(name = "advapi32")]
+unsafe extern "system" {}
+
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
