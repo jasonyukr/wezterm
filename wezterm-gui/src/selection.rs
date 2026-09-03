@@ -164,12 +164,18 @@ pub struct SelectionRange {
     pub end: SelectionCoordinate,
 }
 
-fn is_double_click_word(s: &str) -> bool {
+/// Returns true if the supplied grapheme is part of a word, according to
+/// the supplied set of word boundary characters
+pub fn is_double_click_word_with_boundary(s: &str, word_boundary: &str) -> bool {
     match s.chars().count() {
-        1 => !config::configuration().selection_word_boundary.contains(s),
+        1 => !word_boundary.contains(s),
         0 => false,
         _ => true,
     }
+}
+
+fn is_double_click_word(s: &str) -> bool {
+    is_double_click_word_with_boundary(s, &config::configuration().selection_word_boundary)
 }
 
 impl SelectionRange {

@@ -483,6 +483,14 @@ impl CopyRenderable {
                     );
                     (start, end)
                 }
+                SelectionMode::Word => {
+                    let cursor_range = SelectionRange::word_around(cursor, &*self.delegate);
+                    let start_range = SelectionRange::word_around(sel_start, &*self.delegate);
+
+                    let range = cursor_range.extend_with(start_range);
+
+                    (range.start, range.end)
+                }
                 SelectionMode::SemanticZone => {
                     let zone_range = SelectionRange::zone_around(cursor, &*self.delegate);
                     let start_zone = SelectionRange::zone_around(sel_start, &*self.delegate);
@@ -777,6 +785,13 @@ impl CopyRenderable {
     }
 
     fn move_to_start_of_line_content(&mut self) {
+        self.cursor_to_start_of_line_content();
+        self.select_to_cursor_pos();
+    }
+
+    /// Position the cursor on the first non-space cell of the current
+    /// physical line, without updating the selection
+    fn cursor_to_start_of_line_content(&mut self) {
         let y = self.cursor.y;
         let (top, lines) = self.delegate.get_lines(y..y + 1);
         if let Some(line) = lines.get(0) {
@@ -789,7 +804,6 @@ impl CopyRenderable {
                 }
             }
         }
-        self.select_to_cursor_pos();
     }
 
     fn move_to_selection_other_end(&mut self) {
@@ -822,7 +836,25 @@ impl CopyRenderable {
         }
     }
 
-    fn move_backward_one_word(&mut self) {
+    /// Move the cursor backwards by one word, as defined by `mode`
+    fn move_backward_one_word(&mut self, mode: WordMode) {
+        match mode {
+            WordMode::Unicode => self.move_backward_one_unicode_word(),
+            WordMode::Whitespace => self.move_backward_one_whitespace_word(),
+        }
+        self.select_to_cursor_pos();
+    }
+
+    /// Move the cursor forwards by one word, as defined by `mode`
+    fn move_forward_one_word(&mut self, mode: WordMode) {
+        match mode {
+            WordMode::Unicode => self.move_forward_one_unicode_word(),
+            WordMode::Whitespace => self.move_forward_one_whitespace_word(),
+        }
+        self.select_to_cursor_pos();
+    }
+
+    fn move_backward_one_unicode_word(&mut self) {
         let y = if self.cursor.x == 0 && self.cursor.y > 0 {
             self.cursor.x = usize::max_value();
             self.cursor.y.saturating_sub(1)
@@ -871,13 +903,12 @@ impl CopyRenderable {
                 // The line begins with whitespace
                 self.cursor.x = usize::max_value();
                 self.cursor.y -= 1;
-                return self.move_backward_one_word();
+                return self.move_backward_one_unicode_word();
             }
         }
-        self.select_to_cursor_pos();
     }
 
-    fn move_forward_one_word(&mut self) {
+    fn move_forward_one_unicode_word(&mut self) {
         let y = self.cursor.y;
         let (top, lines) = self.delegate.get_lines(y..y + 1);
         if let Some(line) = lines.get(0) {
@@ -902,11 +933,72 @@ impl CopyRenderable {
                 let max_row = dims.scrollback_top + dims.scrollback_rows as isize;
                 if self.cursor.y + 1 < max_row {
                     self.cursor.y += 1;
-                    return self.move_to_start_of_line_content();
+                    return self.cursor_to_start_of_line_content();
                 }
             }
         }
-        self.select_to_cursor_pos();
+    }
+
+    /// Returns the logical line that contains the supplied stable row
+    fn logical_line_at(&self, y: StableRowIndex) -> Option<LogicalLine> {
+        self.delegate
+            .get_logical_lines(y..y + 1)
+            .into_iter()
+            .find(|line| line.contains_y(y))
+    }
+
+    fn move_forward_one_whitespace_word(&mut self) {
+        let line = match self.logical_line_at(self.cursor.y) {
+            Some(line) => line,
+            None => return,
+        };
+        let x = line.xy_to_logical_x(self.cursor.x, self.cursor.y);
+
+        if let Some((y, x)) = next_whitespace_word_start(&line, x) {
+            self.cursor.y = y;
+            self.cursor.x = x;
+            return;
+        }
+
+        // There is nothing further along this logical line, so continue
+        // with the first word of the next logical line
+        let next_row = line.first_row + line.physical_lines.len() as StableRowIndex;
+        let dims = self.delegate.get_dimensions();
+        let max_row = dims.scrollback_top + dims.scrollback_rows as isize;
+        if next_row >= max_row {
+            return;
+        }
+        if let Some(next) = self.logical_line_at(next_row) {
+            let (y, x) = first_whitespace_word_start(&next);
+            self.cursor.y = y;
+            self.cursor.x = x;
+        }
+    }
+
+    fn move_backward_one_whitespace_word(&mut self) {
+        let line = match self.logical_line_at(self.cursor.y) {
+            Some(line) => line,
+            None => return,
+        };
+        let x = line.xy_to_logical_x(self.cursor.x, self.cursor.y);
+
+        if let Some((y, x)) = prev_whitespace_word_start(&line, x) {
+            self.cursor.y = y;
+            self.cursor.x = x;
+            return;
+        }
+
+        // There is nothing earlier on this logical line, so continue with
+        // the last word of the prior logical line
+        let dims = self.delegate.get_dimensions();
+        if line.first_row <= dims.scrollback_top {
+            return;
+        }
+        if let Some(prior) = self.logical_line_at(line.first_row - 1) {
+            let (y, x) = last_whitespace_word_start(&prior);
+            self.cursor.y = y;
+            self.cursor.x = x;
+        }
     }
 
     fn move_to_end_of_word(&mut self) {
@@ -1260,9 +1352,13 @@ impl Pane for CopyOverlay {
                     MoveToStartOfNextLine => render.move_to_start_of_next_line(),
                     MoveToSelectionOtherEnd => render.move_to_selection_other_end(),
                     MoveToSelectionOtherEndHoriz => render.move_to_selection_other_end_horiz(),
-                    MoveBackwardWord => render.move_backward_one_word(),
-                    MoveForwardWord => render.move_forward_one_word(),
+                    MoveBackwardWord => render.move_backward_one_word(WordMode::Unicode),
+                    MoveForwardWord => render.move_forward_one_word(WordMode::Unicode),
                     MoveForwardWordEnd => render.move_to_end_of_word(),
+                    MoveBackwardWhitespaceWord => {
+                        render.move_backward_one_word(WordMode::Whitespace)
+                    }
+                    MoveForwardWhitespaceWord => render.move_forward_one_word(WordMode::Whitespace),
                     MoveRight => render.move_right_single_cell(),
                     MoveLeft => render.move_left_single_cell(),
                     MoveUp => render.move_up_single_row(),
@@ -1621,6 +1717,96 @@ fn is_whitespace_word(word: &str) -> bool {
         c.is_whitespace()
     } else {
         false
+    }
+}
+
+/// How the boundaries between words are determined when moving the
+/// copy mode cursor by words
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum WordMode {
+    /// Words are determined by unicode word segmentation, so a run of
+    /// punctuation is a word in its own right
+    Unicode,
+    /// Words are delimited by whitespace, so any contiguous run of
+    /// non-whitespace cells, punctuation included, is a single word
+    Whitespace,
+}
+
+/// Computes the cell index ranges of the whitespace delimited words in
+/// the supplied line.  The line is expected to be the logical line, so
+/// that a word that was soft-wrapped across physical rows is treated as
+/// the single word that it is.
+fn whitespace_word_ranges(line: &Line) -> Vec<Range<usize>> {
+    let mut ranges = vec![];
+    let mut current: Option<Range<usize>> = None;
+
+    for cell in line.visible_cells() {
+        let start = cell.cell_index();
+        let end = start + cell.width().max(1);
+
+        if cell.str().is_empty() || is_whitespace_word(cell.str()) {
+            if let Some(range) = current.take() {
+                ranges.push(range);
+            }
+            continue;
+        }
+
+        match &current {
+            Some(range) if range.end == start => {
+                current.as_mut().unwrap().end = end;
+            }
+            _ => {
+                if let Some(range) = current.take() {
+                    ranges.push(range);
+                }
+                current.replace(start..end);
+            }
+        }
+    }
+
+    if let Some(range) = current.take() {
+        ranges.push(range);
+    }
+
+    ranges
+}
+
+/// Returns the physical coordinates of the start of the first whitespace
+/// delimited word that begins after the supplied logical x position
+fn next_whitespace_word_start(line: &LogicalLine, x: usize) -> Option<(StableRowIndex, usize)> {
+    whitespace_word_ranges(&line.logical)
+        .into_iter()
+        .find(|range| range.start > x)
+        .map(|range| line.logical_x_to_physical_coord(range.start))
+}
+
+/// Returns the physical coordinates of the start of the last whitespace
+/// delimited word that begins before the supplied logical x position
+fn prev_whitespace_word_start(line: &LogicalLine, x: usize) -> Option<(StableRowIndex, usize)> {
+    whitespace_word_ranges(&line.logical)
+        .into_iter()
+        .rev()
+        .find(|range| range.start < x)
+        .map(|range| line.logical_x_to_physical_coord(range.start))
+}
+
+/// Returns the physical coordinates of the start of the first whitespace
+/// delimited word in the line, or the start of the line itself when the
+/// line has no words
+fn first_whitespace_word_start(line: &LogicalLine) -> (StableRowIndex, usize) {
+    match whitespace_word_ranges(&line.logical).first() {
+        Some(range) => line.logical_x_to_physical_coord(range.start),
+        None => (line.first_row, 0),
+    }
+}
+
+/// Returns the physical coordinates of the start of the last whitespace
+/// delimited word in the line, or the start of the line itself when the
+/// line has no words
+fn last_whitespace_word_start(line: &LogicalLine) -> (StableRowIndex, usize) {
+    match whitespace_word_ranges(&line.logical).last() {
+        Some(range) => line.logical_x_to_physical_coord(range.start),
+        None => (line.first_row, 0),
     }
 }
 
@@ -2020,4 +2206,166 @@ pub fn copy_key_table() -> KeyTable {
         table.insert((key, mods), KeyTableEntry { action });
     }
     table
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::selection::is_double_click_word_with_boundary;
+    use termwiz::surface::line::DoubleClickRange;
+
+    /// The set of word boundary characters that makes the double click
+    /// selection agree with the whitespace word motions
+    const WHITESPACE_BOUNDARY: &str = " \t\n";
+
+    /// Builds the logical line for `text`, soft wrapping it at `width`
+    /// columns in the same way that a pane would
+    fn logical_line(text: &str, width: usize, first_row: StableRowIndex) -> LogicalLine {
+        let chunks = text
+            .chars()
+            .collect::<Vec<char>>()
+            .chunks(width)
+            .map(|c| c.into_iter().collect::<String>())
+            .collect::<Vec<String>>();
+        let n_chunks = chunks.len().max(1);
+
+        let mut physical_lines = vec![];
+        for (idx, chunk) in chunks.into_iter().enumerate() {
+            let mut line = Line::from_text(&chunk, &CellAttributes::default(), SEQ_ZERO, None);
+            if idx + 1 < n_chunks {
+                line.set_last_cell_was_wrapped(true, SEQ_ZERO);
+            }
+            physical_lines.push(line);
+        }
+        if physical_lines.is_empty() {
+            physical_lines.push(Line::from_text(
+                "",
+                &CellAttributes::default(),
+                SEQ_ZERO,
+                None,
+            ));
+        }
+
+        let mut logical = physical_lines[0].clone();
+        for line in physical_lines.iter().skip(1) {
+            logical.set_last_cell_was_wrapped(false, SEQ_ZERO);
+            logical.append_line(line.clone(), SEQ_ZERO);
+        }
+
+        LogicalLine {
+            physical_lines,
+            logical,
+            first_row,
+        }
+    }
+
+    fn word_ranges(text: &str) -> Vec<Range<usize>> {
+        whitespace_word_ranges(&logical_line(text, text.chars().count().max(1), 0).logical)
+    }
+
+    #[test]
+    fn punctuation_is_part_of_a_whitespace_word() {
+        assert_eq!(
+            word_ranges("foo/bar --flag=value x"),
+            vec![0..7, 8..20, 21..22]
+        );
+        assert_eq!(
+            word_ranges("  leading and trailing  "),
+            vec![2..9, 10..13, 14..22]
+        );
+        assert!(word_ranges("   ").is_empty());
+        assert!(word_ranges("").is_empty());
+    }
+
+    #[test]
+    fn whitespace_words_match_the_double_click_range() {
+        let text = "foo/bar --flag=value x";
+        let line = logical_line(text, text.len(), 0);
+
+        for range in whitespace_word_ranges(&line.logical) {
+            for x in range.clone() {
+                let click = match line.logical.compute_double_click_range(x, |s| {
+                    is_double_click_word_with_boundary(s, WHITESPACE_BOUNDARY)
+                }) {
+                    DoubleClickRange::Range(r) | DoubleClickRange::RangeWithWrap(r) => r,
+                };
+                assert_eq!(click, range, "double click at {x} in {text:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn wrapping_does_not_split_a_word() {
+        // "abcdefghij" is split across two physical rows
+        let line = logical_line("abcdefghij klmno", 8, 3);
+        assert_eq!(whitespace_word_ranges(&line.logical), vec![0..10, 11..16]);
+
+        // From anywhere within the wrapped word we move past the whole
+        // of it, rather than to its continuation on the next row
+        for x in 0..10 {
+            assert_eq!(
+                next_whitespace_word_start(&line, x),
+                Some((4, 3)),
+                "forwards from {x}"
+            );
+        }
+
+        // ... and likewise backwards; the whole of the wrapped word is
+        // skipped over rather than stopping at its continuation row
+        for x in 1..=11 {
+            assert_eq!(
+                prev_whitespace_word_start(&line, x),
+                Some((3, 0)),
+                "backwards from {x}"
+            );
+        }
+
+        // From within a word we move to the start of that word
+        for x in 12..16 {
+            assert_eq!(
+                prev_whitespace_word_start(&line, x),
+                Some((4, 3)),
+                "backwards from {x}"
+            );
+        }
+    }
+
+    #[test]
+    fn motion_at_word_boundaries() {
+        let line = logical_line("one two three", 80, 0);
+        assert_eq!(
+            whitespace_word_ranges(&line.logical),
+            vec![0..3, 4..7, 8..13]
+        );
+
+        // Sitting on the first cell of a word moves to the neighboring word
+        assert_eq!(next_whitespace_word_start(&line, 4), Some((0, 8)));
+        assert_eq!(prev_whitespace_word_start(&line, 4), Some((0, 0)));
+
+        // Sitting within a word moves to its start when going backwards
+        assert_eq!(prev_whitespace_word_start(&line, 6), Some((0, 4)));
+
+        // There is nothing beyond the ends of the line
+        assert_eq!(next_whitespace_word_start(&line, 12), None);
+        assert_eq!(prev_whitespace_word_start(&line, 0), None);
+    }
+
+    #[test]
+    fn motion_across_logical_lines() {
+        // The word that a forwards motion lands on when leaving the
+        // prior logical line, and vice versa
+        let line = logical_line("  hello there", 80, 7);
+        assert_eq!(first_whitespace_word_start(&line), (7, 2));
+        assert_eq!(last_whitespace_word_start(&line), (7, 8));
+
+        // A wrapped line resolves to a coordinate on the appropriate row
+        let line = logical_line("abcdefghij klmno", 8, 7);
+        assert_eq!(first_whitespace_word_start(&line), (7, 0));
+        assert_eq!(last_whitespace_word_start(&line), (8, 3));
+
+        // A line with no words is entered at its first column
+        let line = logical_line("   ", 80, 7);
+        assert_eq!(first_whitespace_word_start(&line), (7, 0));
+        assert_eq!(last_whitespace_word_start(&line), (7, 0));
+    }
 }

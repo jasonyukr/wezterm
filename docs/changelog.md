@@ -114,6 +114,12 @@ As features stabilize some brief notes about them will accumulate here.
   [command_palette_font](config/lua/config/command_palette_font.md), and
   [pane_select_font](config/lua/config/pane_select_font.md) options to control
   the fonts for those respective overlays/modals.  Thanks to @mgpinf! #6696
+* Copy Mode:
+  [MoveForwardWhitespaceWord](config/lua/keyassignment/CopyMode/MoveForwardWhitespaceWord.md)
+  and
+  [MoveBackwardWhitespaceWord](config/lua/keyassignment/CopyMode/MoveBackwardWhitespaceWord.md)
+  actions that move between whitespace delimited words, so that eg:
+  `--flag=value` is treated as a single word.
 
 #### Fixed
 * Race condition when very quickly adjusting font scale, and other improvements
@@ -209,6 +215,10 @@ As features stabilize some brief notes about them will accumulate here.
 * Deadlock when a domain detaches due to SSH timeout. Thanks to @joexue! #6749
   #6750
 * Panic when rewrapping very very long lines. #6729
+* Copy Mode: `SetSelectionMode = 'Word'` behaved the same as `'Cell'`; it now
+  expands the selection by words, using
+  [selection_word_boundary](config/lua/config/selection_word_boundary.md) to
+  determine the boundaries, just as double clicking does.
 
 #### Updated
 * Bundled conpty.dll and OpenConsole.exe to build 1.22.250204002.nupkg
