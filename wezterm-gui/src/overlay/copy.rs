@@ -421,11 +421,13 @@ impl CopyRenderable {
 
     fn clear_selection(&mut self) {
         let pane_id = self.delegate.pane_id();
+        let seqno = self.delegate.get_current_seqno();
         self.window
             .notify(TermWindowNotif::Apply(Box::new(move |term_window| {
                 let mut selection = term_window.selection(pane_id);
                 selection.origin.take();
                 selection.range.take();
+                selection.seqno = seqno;
             })));
     }
 
@@ -520,12 +522,20 @@ impl CopyRenderable {
         let pane_id = self.delegate.pane_id();
         let window = self.window.clone();
         let mode = self.selection_mode;
+        // Record the sequence number that this selection was made against,
+        // as the mouse selection does. Without it the selection keeps the
+        // initial seqno of 0, which makes every line look like it changed
+        // since the selection was made, so the selection is discarded by
+        // check_for_dirty_lines_and_invalidate_selection as soon as the
+        // copy overlay is closed.
+        let seqno = self.delegate.get_current_seqno();
         self.window
             .notify(TermWindowNotif::Apply(Box::new(move |term_window| {
                 let mut selection = term_window.selection(pane_id);
                 selection.origin = Some(start);
                 selection.range = Some(range);
                 selection.rectangular = mode == SelectionMode::Block;
+                selection.seqno = seqno;
                 window.invalidate();
             })));
         self.adjust_viewport_for_cursor_position();
