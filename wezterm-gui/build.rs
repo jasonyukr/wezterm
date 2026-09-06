@@ -18,16 +18,14 @@ fn main() {
         for name in &["conpty.dll", "OpenConsole.exe"] {
             let dest_name = exe_output_dir.join(name);
             let src_name = conhost_dir.join(name);
-
-            if !dest_name.exists() {
-                std::fs::copy(&src_name, &dest_name)
-                    .context(format!(
-                        "copy {} -> {}",
-                        src_name.display(),
-                        dest_name.display()
-                    ))
-                    .unwrap();
-            }
+            println!("cargo:rerun-if-changed={}", src_name.display());
+            std::fs::copy(&src_name, &dest_name)
+                .context(format!(
+                    "copy {} -> {}",
+                    src_name.display(),
+                    dest_name.display()
+                ))
+                .unwrap();
         }
 
         let angle_dir = windows_dir.join("angle");
