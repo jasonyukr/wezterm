@@ -1538,8 +1538,8 @@ impl Config {
             cmd.cwd(cwd);
         }
 
-        // Augment WSLENV so that TERM related environment propagates
-        // across the win32/wsl boundary
+        // Augment WSLENV so that terminal identity and capability-related
+        // environment propagates across the win32/wsl boundary.
         let mut wsl_env = std::env::var("WSLENV").ok();
 
         // If we are running as an appimage, we will have "$APPIMAGE"
@@ -1562,11 +1562,7 @@ impl Config {
         }
 
         if wsl_env.is_some() || cfg!(windows) || crate::version::running_under_wsl() {
-            let mut wsl_env = wsl_env.unwrap_or_default();
-            if !wsl_env.is_empty() {
-                wsl_env.push(':');
-            }
-            wsl_env.push_str("TERM:COLORTERM:TERM_PROGRAM:TERM_PROGRAM_VERSION");
+            let wsl_env = augment_wslenv(wsl_env.unwrap_or_default());
             cmd.env("WSLENV", wsl_env);
         }
 
@@ -1578,6 +1574,31 @@ impl Config {
         // de-facto standard for identifying the terminal.
         cmd.env("TERM_PROGRAM", "WezTerm");
         cmd.env("TERM_PROGRAM_VERSION", crate::wezterm_version());
+    }
+}
+
+fn augment_wslenv(mut wsl_env: String) -> String {
+    if !wsl_env.is_empty() {
+        wsl_env.push(':');
+    }
+    wsl_env.push_str("TERM:COLORTERM:TERM_PROGRAM:TERM_PROGRAM_VERSION:WEZTERM_PANE");
+    wsl_env
+}
+
+#[cfg(test)]
+mod tests {
+    use super::augment_wslenv;
+
+    const WEZTERM_ENV: &str =
+        "TERM:COLORTERM:TERM_PROGRAM:TERM_PROGRAM_VERSION:WEZTERM_PANE";
+
+    #[test]
+    fn wslenv_propagates_wezterm_pane() {
+        assert_eq!(augment_wslenv(String::new()), WEZTERM_ENV);
+        assert_eq!(
+            augment_wslenv("USER_ENV/u".to_string()),
+            format!("USER_ENV/u:{WEZTERM_ENV}")
+        );
     }
 }
 
