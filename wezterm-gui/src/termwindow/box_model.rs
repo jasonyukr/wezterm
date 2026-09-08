@@ -202,6 +202,26 @@ struct ResolvedColor {
     mix_value: f32,
 }
 
+/// Combine an element's own colors with those it inherited, so that the
+/// colors it does not set are passed on to its children.
+fn inherit_colors(colors: &ElementColors, inherited: Option<&ElementColors>) -> ElementColors {
+    let inherited = match inherited {
+        Some(inherited) => inherited,
+        None => return colors.clone(),
+    };
+
+    let inherit = |color: &InheritableColor, from: &InheritableColor| match color {
+        InheritableColor::Inherited => from.clone(),
+        color => color.clone(),
+    };
+
+    ElementColors {
+        border: colors.border.clone(),
+        bg: inherit(&colors.bg, &inherited.bg),
+        text: inherit(&colors.text, &inherited.text),
+    }
+}
+
 impl ResolvedColor {
     fn apply(&self, quad: &mut QuadImpl) {
         quad.set_fg_color(self.color);
@@ -922,8 +942,14 @@ impl super::TermWindow {
             ComputedElementContent::Children(kids) => {
                 drop(layers);
 
+                // An element that doesn't set a color of its own passes on the
+                // color that it inherited rather than ending the chain; an
+                // inherited color with nothing left to inherit from resolves
+                // to transparent.
+                let inherited = inherit_colors(colors, inherited_colors);
+
                 for kid in kids {
-                    self.render_element(kid, gl_state, Some(colors))?;
+                    self.render_element(kid, gl_state, Some(&inherited))?;
                 }
             }
             ComputedElementContent::Poly { poly, line_width } => {
