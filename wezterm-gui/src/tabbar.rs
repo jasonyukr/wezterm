@@ -321,6 +321,7 @@ impl TabBarState {
         config: &ConfigHandle,
         left_status: &str,
         right_status: &str,
+        fancy_title_cells: Option<usize>,
     ) -> Self {
         let colors = colors.cloned().unwrap_or_else(TabBarColors::default);
 
@@ -372,7 +373,7 @@ impl TabBarState {
                         pane_info,
                         config,
                         false,
-                        config.tab_max_width,
+                        fancy_title_cells.unwrap_or(config.tab_max_width),
                     )
                 })
                 .collect()
@@ -384,7 +385,11 @@ impl TabBarState {
 
         let available_cells =
             title_width.saturating_sub(number_of_tabs.saturating_sub(1) + new_tab.len());
-        let tab_width_max = if config.use_fancy_tab_bar || available_cells >= titles_len {
+        let tab_width_max = if let Some(cells) = fancy_title_cells {
+            // The fancy tab bar has worked out how much title text really
+            // fits in a tab, in the pixel terms that it lays the tabs out in
+            cells
+        } else if available_cells >= titles_len {
             // We can render each title with its full width
             usize::max_value()
         } else {

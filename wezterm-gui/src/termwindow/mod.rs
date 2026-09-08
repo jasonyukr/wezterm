@@ -1989,6 +1989,11 @@ impl TermWindow {
             &self.config,
             &self.left_status,
             &self.right_status,
+            if self.config.show_tabs_in_tab_bar {
+                self.fancy_tab_bar_title_cells(tabs.len())
+            } else {
+                None
+            },
         );
         if new_tab_bar != self.tab_bar {
             self.tab_bar = new_tab_bar;
